@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -11,7 +11,8 @@
     "url": "https://github.com/szok/synchro"
   },
   "engines": {
-    "vscode": "^1.90.0"
+    "vscode": "^1.90.0",
+    "node": ">=24"
   },
   "categories": [
     "Other"
@@ -147,15 +148,18 @@
     "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --sourcemap --outfile=out/extension.js",
     "watch": "npm run build -- --watch",
     "vscode:prepublish": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --minify --outfile=out/extension.js",
-    "check": "tsc --noEmit",
+    "check": "tsc --noEmit && prettier --check .",
     "test": "esbuild src/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test && node --test 'out/test/*.test.js'",
-    "package": "vsce package"
+    "package": "vsce package",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@types/node": "^20.19.0",
     "@types/vscode": "~1.90.0",
-    "@vscode/vsce": "~3.7.1",
+    "@vscode/vsce": "~4.0.0",
     "esbuild": "^0.28.2",
-    "typescript": "~5.9.3"
+    "prettier": "3.9.9",
+    "typescript": "~7.0.2"
   }
 }

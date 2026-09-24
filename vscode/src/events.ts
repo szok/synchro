@@ -1,13 +1,15 @@
 // Events printed by `synchro --json`, one JSON object per line on stdout.
 // The contract is documented in the repository README ("JSON output").
-
+/** Severity of an event; drives the log line colour. */
 export type Level = 'info' | 'success' | 'warn' | 'error';
 
+/** Fields shared by every event. */
 interface Base {
   time: string;
   level: Level;
 }
 
+/** Any event emitted by `synchro --json`, discriminated by `event`. */
 export type SynchroEvent = Base &
   (
     | { event: 'start'; version: string }
@@ -40,6 +42,11 @@ export function parseEvent(line: string): SynchroEvent | undefined {
   return undefined;
 }
 
+/**
+ * Formats an RFC 3339 timestamp as local `HH:MM:SS`.
+ * @param time Timestamp from the event's `time` field.
+ * @returns `--:--:--` when the timestamp cannot be parsed.
+ */
 function clock(time: string): string {
   const date = new Date(time);
   if (Number.isNaN(date.getTime())) {
@@ -53,6 +60,10 @@ export function formatEvent(e: SynchroEvent): string {
   return `${clock(e.time)} ${describe(e)}`;
 }
 
+/**
+ * Renders the message part of an event, without the timestamp.
+ * @param e Event to describe.
+ */
 function describe(e: SynchroEvent): string {
   switch (e.event) {
     case 'start':

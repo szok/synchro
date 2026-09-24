@@ -2,6 +2,7 @@ import { ChildProcess, spawn } from 'child_process';
 import * as readline from 'readline';
 import { parseEvent, SynchroEvent } from './events';
 
+/** How to run synchro: binary, extra arguments, working directory and environment. */
 export interface Launch {
   binary: string;
   args: string[];
@@ -9,7 +10,9 @@ export interface Launch {
   env: NodeJS.ProcessEnv;
 }
 
+/** Callbacks receiving the output of a synchro process. */
 export interface Handlers {
+  /** A parsed JSON event from stdout. */
   event(e: SynchroEvent): void;
   /** Output that is not a JSON event: stderr, or a spawn failure. */
   text(line: string): void;
@@ -26,6 +29,11 @@ export class SynchroProcess {
   /** Resolves with the exit code (null when killed by a signal or never started). */
   readonly exited: Promise<number | null>;
 
+  /**
+   * Spawns the process and starts forwarding its output.
+   * @param launch Binary, arguments, working directory and environment.
+   * @param handlers Receive events and plain text lines.
+   */
   constructor(launch: Launch, handlers: Handlers) {
     this.child = spawn(launch.binary, ['--json', '--stop-on-stdin-close', ...launch.args], {
       cwd: launch.cwd,
@@ -45,6 +53,7 @@ export class SynchroProcess {
     this.child.stdin?.on('error', () => undefined);
   }
 
+  /** True while the process has started and not yet exited. */
   get running(): boolean {
     return this.child.exitCode === null && this.child.signalCode === null && this.child.pid !== undefined;
   }
@@ -92,6 +101,10 @@ export function runOnce(launch: Launch, handlers: Handlers): Promise<{ code: num
   });
 }
 
+/**
+ * Splits the child's stdout and stderr into lines and forwards them: JSON events to
+ * `handlers.event`, anything else (non-blank) to `handlers.text`.
+ */
 function pipeLines(child: ChildProcess, handlers: Handlers): void {
   if (child.stdout) {
     readline.createInterface({ input: child.stdout }).on('line', (line) => {

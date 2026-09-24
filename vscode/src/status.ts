@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 
+/** Sync state shown by the status bar item. */
 export type State =
   | { kind: 'stopped' }
   | { kind: 'connecting' }
@@ -16,6 +17,10 @@ export class Status implements vscode.Disposable {
   /** Full folder name for the tooltip and short one for the text. */
   private label?: { name: string; short: string };
 
+  /**
+   * Creates and shows the status bar item.
+   * @param configFile Config file of the folder; passed to `synchro.toggle` on click.
+   */
   constructor(configFile: string) {
     this.item = vscode.window.createStatusBarItem(`synchro.status:${configFile}`, vscode.StatusBarAlignment.Left, 50);
     this.item.name = 'Synchro';
@@ -31,6 +36,7 @@ export class Status implements vscode.Disposable {
     this.render();
   }
 
+  /** Switches to a new state; entering `connecting` resets the error counter. */
   set(state: State): void {
     this.state = state;
     if (state.kind === 'connecting') {
@@ -39,15 +45,18 @@ export class Status implements vscode.Disposable {
     this.render();
   }
 
+  /** The state currently shown. */
   get current(): State {
     return this.state;
   }
 
+  /** Counts one more error reported by synchro in the current run. */
   addError(): void {
     this.errors++;
     this.render();
   }
 
+  /** Updates the item's icon, text, colours and tooltip from the state, label and error count. */
   private render(): void {
     const s = this.state;
     const name = this.label ? `Synchro (${this.label.name})` : 'Synchro';
@@ -95,6 +104,7 @@ export class Status implements vscode.Disposable {
     this.item.tooltip = tooltip;
   }
 
+  /** Removes the status bar item. */
   dispose(): void {
     this.item.dispose();
   }

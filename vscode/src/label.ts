@@ -36,6 +36,11 @@ export function shortLabels(names: string[]): string[] {
   }
 }
 
+/**
+ * Builds a label from the initials of all but the last word plus the first letters of the last word.
+ * @param w Words of the folder name.
+ * @param lastLetters How many letters of the last word to keep.
+ */
 function label(w: string[], lastLetters: number): string {
   const initials = w.slice(0, -1).map((word) => word[0]);
   return [...initials, w[w.length - 1].slice(0, lastLetters)].join('').toLowerCase();

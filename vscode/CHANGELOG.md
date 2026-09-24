@@ -5,7 +5,16 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.1]
+## [0.3.2] - 2026-09-24
+
+### Changed
+
+- [@pjarolewski]: Requires Node.js 24 or newer for development (`engines.node`)
+- [@pjarolewski]: Upgraded TypeScript to 7.0 and `@vscode/vsce` to 4.0
+- [@pjarolewski]: Added Prettier (`npm run format`; `npm run check` now also verifies formatting) and formatted the sources
+- [@pjarolewski]: Documented every function, class and exported type with JSDoc comments
+
+## [0.3.1] - 2026-09-24
 
 ### Changed
 

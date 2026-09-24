@@ -15,7 +15,13 @@ test('parseEvent ignores non-event lines', () => {
 });
 
 test('formatEvent renders a readable line', () => {
-  const line = formatEvent({ event: 'syncAllDone', level: 'info', uploaded: 3, total: 4, time: '2026-09-24T09:36:04Z' });
+  const line = formatEvent({
+    event: 'syncAllDone',
+    level: 'info',
+    uploaded: 3,
+    total: 4,
+    time: '2026-09-24T09:36:04Z',
+  });
   assert.match(line, /^\d\d:\d\d:\d\d ⟳ Full sync complete: 3\/4 files uploaded\.$/);
 });
 

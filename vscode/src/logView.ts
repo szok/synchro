@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Level } from './events';
 
+/** Oldest lines are dropped beyond this many, both here and in the webview. */
 const MAX_LINES = 5000;
 
 // Same logotype as `logx.PrintLogo` in the CLI.
@@ -11,6 +12,7 @@ const LOGO = `███████╗██╗   ██╗███╗   ██
 ███████║   ██║   ██║ ╚████║╚██████╗██║  ██║██║  ██║╚██████╔╝
 ╚══════╝   ╚═╝   ╚═╝  ╚═══╝ ╚═════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝`;
 
+/** One log line; lines without a level are raw process output. */
 interface Line {
   text: string;
   level?: Level;
@@ -18,12 +20,17 @@ interface Line {
 
 /** The "Synchro" tab in the bottom panel, next to Output and Terminal. */
 export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
+  /** View id contributed in package.json. */
   static readonly viewId = 'synchro.log';
 
   private readonly lines: Line[] = [];
   private view?: vscode.WebviewView;
   private readonly registration = vscode.window.registerWebviewViewProvider(LogView.viewId, this);
 
+  /**
+   * Called by VS Code when the tab is first shown or recreated; renders the page
+   * and replays the buffered lines once it reports ready.
+   */
   resolveWebviewView(view: vscode.WebviewView): void {
     this.view = view;
     view.webview.options = { enableScripts: true };
@@ -41,6 +48,11 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
     });
   }
 
+  /**
+   * Buffers a line and sends it to the view if it is open.
+   * @param text Line to show.
+   * @param level Colours the line; omit for raw output.
+   */
   append(text: string, level?: Level): void {
     const line = { text, level };
     this.lines.push(line);
@@ -50,25 +62,34 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
     void this.view?.webview.postMessage({ type: 'append', line });
   }
 
+  /** Empties the buffer and the view. */
   clear(): void {
     this.lines.length = 0;
     void this.view?.webview.postMessage({ type: 'reset', lines: [] });
   }
 
+  /** Reveals the tab in the bottom panel. */
   async show(): Promise<void> {
     await vscode.commands.executeCommand(`${LogView.viewId}.focus`);
   }
 
+  /** Unregisters the view provider. */
   dispose(): void {
     this.registration.dispose();
   }
 }
 
+/** Random token allowing only our own inline style and script under the page's CSP. */
 function nonce(): string {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   return Array.from({ length: 32 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
+/**
+ * Builds the webview page: logo, log container and the script that renders
+ * `reset`/`append` messages and keeps the view scrolled to the bottom.
+ * @param nonce CSP nonce for the inline style and script.
+ */
 function html(nonce: string): string {
   return `<!DOCTYPE html>
 <html lang="en">

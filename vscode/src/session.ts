@@ -3,8 +3,11 @@ import { formatEvent, SynchroEvent } from './events';
 import { Launch, SynchroProcess } from './process';
 import { Status } from './status';
 
+/** What a session needs from the controller: the shared log. */
 export interface SessionHost {
+  /** Appends a line to the shared log. */
   log(line: string, level?: SynchroEvent['level']): void;
+  /** Reveals the Synchro log tab. */
   showLog(): Promise<void>;
 }
 
@@ -20,6 +23,12 @@ export class Session implements vscode.Disposable {
   /** Folder name shown in logs and messages; only set when the workspace has several folders. */
   private label?: string;
 
+  /**
+   * @param folder Workspace folder this session syncs.
+   * @param configFile Absolute path of the folder's config file; also the session's key.
+   * @param host Shared log.
+   * @param onExit Called after the process has exited.
+   */
   constructor(
     readonly folder: vscode.WorkspaceFolder,
     readonly configFile: string,
@@ -29,6 +38,7 @@ export class Session implements vscode.Disposable {
     this.status = new Status(configFile);
   }
 
+  /** True while a synchro process is running for this folder. */
   get running(): boolean {
     return this.process !== undefined;
   }
@@ -38,11 +48,19 @@ export class Session implements vscode.Disposable {
     return this.label ? `Synchro (${this.label})` : 'Synchro';
   }
 
+  /**
+   * Sets the folder name used in logs, messages and the status bar item.
+   * @param label Full and short folder name, or undefined in a single-folder workspace.
+   */
   setLabel(label: { name: string; short: string } | undefined): void {
     this.label = label?.name;
     this.status.setLabel(label);
   }
 
+  /**
+   * Starts the synchro process and resets the per-run state. The caller checks `running` first.
+   * @param launch How to run synchro for this folder.
+   */
   start(launch: Launch): void {
     this.stopRequested = false;
     this.lastError = undefined;
@@ -59,6 +77,7 @@ export class Session implements vscode.Disposable {
     void proc.exited.then((code) => this.handleExit(proc, code));
   }
 
+  /** Gracefully stops the process; resolves once it has exited. Does nothing when not running. */
   async stop(): Promise<void> {
     const proc = this.process;
     if (!proc) {
@@ -74,10 +93,12 @@ export class Session implements vscode.Disposable {
     this.host.log(this.label ? `[${this.label}] ${line}` : line, level);
   }
 
+  /** Writes an event to the shared log as a formatted line. */
   logEvent(e: SynchroEvent): void {
     this.log(formatEvent(e), e.level);
   }
 
+  /** Logs an event and updates the status bar and notifications from it. */
   private handleEvent(e: SynchroEvent): void {
     this.logEvent(e);
     switch (e.event) {
@@ -128,6 +149,7 @@ export class Session implements vscode.Disposable {
     }
   }
 
+  /** Logs a non-event line, remembering spawn failures for the exit message. */
   private handleText(line: string): void {
     this.log(line);
     if (line.startsWith('Failed to start')) {
@@ -135,6 +157,12 @@ export class Session implements vscode.Disposable {
     }
   }
 
+  /**
+   * Resets the session after its process exited and reports unexpected exits.
+   * Ignores exits of processes replaced by a restart.
+   * @param proc The process that exited.
+   * @param code Its exit code, or null when killed or never started.
+   */
   private handleExit(proc: SynchroProcess, code: number | null): void {
     if (this.process !== proc) {
       return;
@@ -148,6 +176,11 @@ export class Session implements vscode.Disposable {
     this.onExit();
   }
 
+  /**
+   * Shows an error for an unexpected exit, with a shortcut to the binary setting
+   * when the binary could not be found.
+   * @param message The last error reported by synchro, or a generic exit message.
+   */
   private async showExitError(message: string): Promise<void> {
     const notFound = message.startsWith('Failed to start') && message.includes('ENOENT');
     const buttons = notFound ? ['Open settings', 'Show log'] : ['Show log'];
@@ -162,6 +195,7 @@ export class Session implements vscode.Disposable {
     }
   }
 
+  /** Shows a warning notification with a "Show log" button. */
   private async warn(message: string): Promise<void> {
     const action = await vscode.window.showWarningMessage(message, 'Show log');
     if (action === 'Show log') {
@@ -169,6 +203,7 @@ export class Session implements vscode.Disposable {
     }
   }
 
+  /** Removes the status bar item. Does not stop the process. */
   dispose(): void {
     this.status.dispose();
   }

@@ -48,7 +48,8 @@ go vet ./...                        # Static checks
 - **`vscode/`** — VS Code extension (TypeScript, esbuild). Spawns
   `synchro --json --stop-on-stdin-close`, parses events (`src/events.ts`), stops
   by closing stdin. `make vscode-bin` for F5 debugging, `make vscode-package`
-  for per-platform `.vsix` files. Checks: `npm run check && npm test` in `vscode/`.
+  for per-platform `.vsix` files. Checks: `npm run check && npm test` in `vscode/`
+  (`check` = `tsc` + `prettier --check`; `npm run format` rewrites). Requires Node ≥ 24.
 - **Shutdown** — first SIGINT/SIGTERM (or stdin EOF with `--stop-on-stdin-close`)
   cancels work but keeps the connection until in-flight ops finish; a second
   signal or 15s timeout force-quits.

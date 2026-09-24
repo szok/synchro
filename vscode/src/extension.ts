@@ -9,10 +9,16 @@ import { LogView } from './logView';
 import { Launch, runOnce } from './process';
 import { Session } from './session';
 
+/** Config file name used by `synchro --init` and the default of `synchro.configPath`. */
 const DEFAULT_CONFIG = '.synchro.json';
 
+/** The controller of the active extension, kept for `deactivate`. */
 let controller: Controller | undefined;
 
+/**
+ * Extension entry point: creates the controller, registers the commands and
+ * auto-starts folders that have `synchro.autoStart` enabled.
+ */
 export function activate(context: vscode.ExtensionContext): void {
   controller = new Controller(context);
   const c = controller;
@@ -33,10 +39,12 @@ export function activate(context: vscode.ExtensionContext): void {
   void c.autoStart();
 }
 
+/** Stops every running synchro process before VS Code unloads the extension. */
 export async function deactivate(): Promise<void> {
   await controller?.stopAll();
 }
 
+/** Owns the log, one `Session` per configured workspace folder, and implements the commands. */
 class Controller implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel('Synchro');
   readonly logView = new LogView();
@@ -45,6 +53,7 @@ class Controller implements vscode.Disposable {
   /** One session per config file of a workspace folder, running or not. */
   private readonly sessions = new Map<string, Session>();
 
+  /** Creates sessions for the current folders and follows folder and setting changes. */
   constructor(private readonly context: vscode.ExtensionContext) {
     this.disposables.push(
       vscode.workspace.onDidChangeWorkspaceFolders(() => this.refreshWorkspace()),
@@ -57,6 +66,7 @@ class Controller implements vscode.Disposable {
     this.refreshWorkspace();
   }
 
+  /** Starts watching every folder whose `synchro.autoStart` setting is enabled. */
   async autoStart(): Promise<void> {
     const folders = foldersWithConfig().filter((folder) =>
       vscode.workspace.getConfiguration('synchro', folder.uri).get<boolean>('autoStart', false),
@@ -71,7 +81,11 @@ class Controller implements vscode.Disposable {
       return;
     }
     if (session.running) {
-      const action = await vscode.window.showInformationMessage(`${session.name} is already running.`, 'Restart', 'Show log');
+      const action = await vscode.window.showInformationMessage(
+        `${session.name} is already running.`,
+        'Restart',
+        'Show log',
+      );
       if (action === 'Restart') {
         await session.stop();
         await this.start(mode, session.configFile);
@@ -87,6 +101,10 @@ class Controller implements vscode.Disposable {
     session.start(await this.launch(session.configFile, args));
   }
 
+  /**
+   * Chooses the session for a start command: the only folder, or one picked from
+   * the idle folders. Offers to create a config when no folder has one.
+   */
   private async pickSessionToStart(): Promise<Session | undefined> {
     const folders = foldersWithConfig();
     if (folders.length === 0) {
@@ -96,7 +114,10 @@ class Controller implements vscode.Disposable {
     this.syncSessions();
     const idle = folders.filter((folder) => !this.sessions.get(configPath(folder))?.running);
     if (idle.length === 0 && folders.length > 1) {
-      const action = await vscode.window.showInformationMessage('Synchro is already running in every folder.', 'Show log');
+      const action = await vscode.window.showInformationMessage(
+        'Synchro is already running in every folder.',
+        'Show log',
+      );
       if (action === 'Show log') {
         void this.showLog();
       }
@@ -128,6 +149,7 @@ class Controller implements vscode.Disposable {
     await Promise.all(targets.map((s) => s.stop()));
   }
 
+  /** Stops every running session. */
   async stopAll(): Promise<void> {
     await Promise.all([...this.sessions.values()].map((s) => s.stop()));
   }
@@ -141,6 +163,10 @@ class Controller implements vscode.Disposable {
     return this.sessions.get(configFile)?.running ? this.stop(configFile) : this.start('--sync', configFile);
   }
 
+  /**
+   * Generates a sample config with `synchro --init` at the folder's configured path,
+   * opens it, and offers to test the connection or store a password.
+   */
   async createConfig(): Promise<void> {
     const folders = vscode.workspace.workspaceFolders ?? [];
     if (folders.length === 0) {
@@ -190,6 +216,7 @@ class Controller implements vscode.Disposable {
     }
   }
 
+  /** Runs `synchro --test` for a folder and reports the outcome as a notification. */
   async testConnection(): Promise<void> {
     const folder = await pickConfiguredFolder('Select the folder whose connection to test');
     if (!folder) {
@@ -198,7 +225,8 @@ class Controller implements vscode.Disposable {
     const configFile = configPath(folder);
     this.syncSessions();
     const session = this.sessions.get(configFile);
-    const log = (line: string, level?: SynchroEvent['level']) => (session ? session.log(line, level) : this.log(line, level));
+    const log = (line: string, level?: SynchroEvent['level']) =>
+      session ? session.log(line, level) : this.log(line, level);
     const launch = await this.launch(configFile, ['--test']);
     const result = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: `${session?.name ?? 'Synchro'}: testing connection…` },
@@ -216,6 +244,10 @@ class Controller implements vscode.Disposable {
     await this.reportFailure('Connection test failed', result.events, session?.name);
   }
 
+  /**
+   * Stores a folder's password or key passphrase in the OS keychain (SecretStorage).
+   * An empty input clears it.
+   */
   async setPassword(): Promise<void> {
     const folder = await pickConfiguredFolder('Select the folder to store the password for');
     if (!folder) {
@@ -223,7 +255,8 @@ class Controller implements vscode.Disposable {
     }
     const password = await vscode.window.showInputBox({
       title: 'Synchro password',
-      prompt: 'SSH password, or the private key passphrase for key auth. Stored in the OS keychain and passed as SYNCHRO_PASSWORD; it overrides "password" in the config file.',
+      prompt:
+        'SSH password, or the private key passphrase for key auth. Stored in the OS keychain and passed as SYNCHRO_PASSWORD; it overrides "password" in the config file.',
       password: true,
       ignoreFocusOut: true,
     });
@@ -239,10 +272,13 @@ class Controller implements vscode.Disposable {
     }
     await this.context.secrets.store(key, password);
     void vscode.window.showInformationMessage(
-      this.sessions.get(configFile)?.running ? 'Synchro password saved. Restart syncing to use it.' : 'Synchro password saved.',
+      this.sessions.get(configFile)?.running
+        ? 'Synchro password saved. Restart syncing to use it.'
+        : 'Synchro password saved.',
     );
   }
 
+  /** Removes a folder's stored password from the OS keychain. */
   async clearPassword(): Promise<void> {
     const folder = await pickFolder(foldersWithConfig(), 'Select the folder to clear the password for');
     if (!folder) {
@@ -252,6 +288,12 @@ class Controller implements vscode.Disposable {
     void vscode.window.showInformationMessage('Synchro password cleared.');
   }
 
+  /**
+   * Builds the launch options for a config: resolved binary, `--config`, the stored
+   * password as `SYNCHRO_PASSWORD`, and the config's directory as working directory.
+   * @param configFile Absolute path of the config file.
+   * @param args Mode flags such as `--sync` or `--test`.
+   */
   private async launch(configFile: string, args: string[]): Promise<Launch> {
     const env = { ...process.env };
     const password = await this.context.secrets.get(secretKey(configFile));
@@ -267,6 +309,7 @@ class Controller implements vscode.Disposable {
     };
   }
 
+  /** Reveals the Synchro log tab. */
   async showLog(): Promise<void> {
     await this.logView.show();
   }
@@ -277,10 +320,17 @@ class Controller implements vscode.Disposable {
     this.logView.append(line, level);
   }
 
+  /** Writes an event to the log as a formatted line. */
   private logEvent(e: SynchroEvent): void {
     this.log(formatEvent(e), e.level);
   }
 
+  /**
+   * Shows an error notification with the first error message from `events`.
+   * @param title What failed, e.g. "Connection test failed".
+   * @param events Events of the failed run.
+   * @param name Session name prefixed to the message.
+   */
   private async reportFailure(title: string, events: SynchroEvent[], name = 'Synchro'): Promise<void> {
     const errors = events.filter((e) => e.event === 'error').map((e) => (e.event === 'error' ? e.message : ''));
     const detail = errors[0] ?? 'see the Synchro output for details';
@@ -327,18 +377,26 @@ class Controller implements vscode.Disposable {
     sessions.forEach((s, i) => s.setLabel(multiRoot ? { name: s.folder.name, short: short[i] } : undefined));
   }
 
+  /**
+   * Offers to restart a running session after its config file changed on disk.
+   * @param changedFile Absolute path of the changed config file.
+   */
   private async offerRestart(changedFile: string): Promise<void> {
     const session = this.sessions.get(changedFile);
     if (!session?.running) {
       return;
     }
-    const action = await vscode.window.showInformationMessage(`${session.name} config changed. Restart syncing to apply it?`, 'Restart');
+    const action = await vscode.window.showInformationMessage(
+      `${session.name} config changed. Restart syncing to apply it?`,
+      'Restart',
+    );
     if (action === 'Restart') {
       await session.stop();
       await this.start('--sync', changedFile);
     }
   }
 
+  /** Disposes watchers, sessions, the log and the output channel. Does not stop processes. */
   dispose(): void {
     this.configWatchers.forEach((d) => d.dispose());
     this.sessions.forEach((s) => s.dispose());
@@ -346,15 +404,21 @@ class Controller implements vscode.Disposable {
   }
 }
 
+/** Absolute path of a folder's config file, from the `synchro.configPath` setting. */
 function configPath(folder: vscode.WorkspaceFolder): string {
   const relative = vscode.workspace.getConfiguration('synchro', folder.uri).get<string>('configPath', DEFAULT_CONFIG);
   return path.resolve(folder.uri.fsPath, relative || DEFAULT_CONFIG);
 }
 
+/** Workspace folders whose config file exists. */
 function foldersWithConfig(): vscode.WorkspaceFolder[] {
   return (vscode.workspace.workspaceFolders ?? []).filter((folder) => fs.existsSync(configPath(folder)));
 }
 
+/**
+ * Lets the user pick one of `folders`; skips the picker when there is at most one.
+ * @returns The folder, or undefined when cancelled or `folders` is empty.
+ */
 async function pickFolder(
   folders: readonly vscode.WorkspaceFolder[],
   placeHolder: string,
@@ -379,6 +443,7 @@ async function pickConfiguredFolder(placeHolder: string): Promise<vscode.Workspa
   return pickFolder(folders, placeHolder);
 }
 
+/** Warns that no config exists and offers to run "Create config". */
 async function offerCreateConfig(): Promise<void> {
   const action = await vscode.window.showWarningMessage('No Synchro config found in this workspace.', 'Create config');
   if (action === 'Create config') {
@@ -386,6 +451,7 @@ async function offerCreateConfig(): Promise<void> {
   }
 }
 
+/** SecretStorage key of the password for a config file. */
 function secretKey(configFile: string): string {
   return `synchro.password:${configFile}`;
 }
