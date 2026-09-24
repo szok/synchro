@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -29,33 +29,89 @@
   ],
   "contributes": {
     "commands": [
-      { "command": "synchro.createConfig", "title": "Create config", "category": "Synchro" },
-      { "command": "synchro.start", "title": "Start sync", "category": "Synchro" },
-      { "command": "synchro.syncAll", "title": "Sync all and watch", "category": "Synchro" },
-      { "command": "synchro.stop", "title": "Stop", "category": "Synchro" },
-      { "command": "synchro.toggle", "title": "Toggle sync", "category": "Synchro" },
-      { "command": "synchro.testConnection", "title": "Test connection", "category": "Synchro" },
-      { "command": "synchro.setPassword", "title": "Set password", "category": "Synchro" },
-      { "command": "synchro.clearPassword", "title": "Clear password", "category": "Synchro" },
-      { "command": "synchro.showLog", "title": "Show log", "category": "Synchro" },
-      { "command": "synchro.clearLog", "title": "Clear log", "category": "Synchro", "icon": "$(clear-all)" }
+      {
+        "command": "synchro.createConfig",
+        "title": "Create config",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.start",
+        "title": "Start sync",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.syncAll",
+        "title": "Sync all and watch",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.stop",
+        "title": "Stop",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.toggle",
+        "title": "Toggle sync",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.testConnection",
+        "title": "Test connection",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.setPassword",
+        "title": "Set password",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.clearPassword",
+        "title": "Clear password",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.showLog",
+        "title": "Show log",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.clearLog",
+        "title": "Clear log",
+        "category": "Synchro",
+        "icon": "$(clear-all)"
+      }
     ],
     "viewsContainers": {
       "panel": [
-        { "id": "synchro", "title": "Synchro", "icon": "$(sync)" }
+        {
+          "id": "synchro",
+          "title": "Synchro",
+          "icon": "$(sync)"
+        }
       ]
     },
     "views": {
       "synchro": [
-        { "type": "webview", "id": "synchro.log", "name": "Log" }
+        {
+          "type": "webview",
+          "id": "synchro.log",
+          "name": "Log"
+        }
       ]
     },
     "menus": {
       "commandPalette": [
-        { "command": "synchro.toggle", "when": "false" }
+        {
+          "command": "synchro.toggle",
+          "when": "false"
+        }
       ],
       "view/title": [
-        { "command": "synchro.clearLog", "when": "view == synchro.log", "group": "navigation" }
+        {
+          "command": "synchro.clearLog",
+          "when": "view == synchro.log",
+          "group": "navigation"
+        }
       ]
     },
     "configuration": {
