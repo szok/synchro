@@ -55,9 +55,11 @@ export class Status implements vscode.Disposable {
     let progress = '';
     let tooltip: string;
     this.item.backgroundColor = undefined;
+    this.item.color = undefined;
     switch (s.kind) {
       case 'stopped':
-        icon = '$(circle-slash)';
+        icon = '$(cloud-upload)';
+        this.item.color = new vscode.ThemeColor('disabledForeground');
         tooltip = `${name} is stopped — click to start syncing`;
         break;
       case 'connecting':
@@ -70,11 +72,12 @@ export class Status implements vscode.Disposable {
         tooltip = `${name} is uploading all files — click to stop`;
         break;
       case 'watching':
-        icon = '$(check)';
+        icon = '$(cloud-upload)';
+        this.item.color = new vscode.ThemeColor('charts.green');
         tooltip = `${name} is syncing to ${s.target} — click to stop`;
         break;
       case 'disconnected':
-        icon = '$(warning)';
+        icon = '$(debug-disconnect)';
         tooltip = `${name} lost the connection and is reconnecting — click to stop`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         break;

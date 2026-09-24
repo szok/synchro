@@ -92,7 +92,7 @@
     "watch": "npm run build -- --watch",
     "vscode:prepublish": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --minify --outfile=out/extension.js",
     "check": "tsc --noEmit",
-    "test": "esbuild src/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test && node --test out/test/",
+    "test": "esbuild src/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test && node --test 'out/test/*.test.js'",
     "package": "vsce package"
   },
   "devDependencies": {
