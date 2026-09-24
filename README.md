@@ -147,8 +147,8 @@ JSON events from its stdout and shows them in VS Code. User-facing docs live in
 - **Settings**: `synchro.binaryPath`, `synchro.configPath`, `synchro.autoStart`,
   `synchro.quiet`.
 
-Limitations: one folder syncs at a time (in a multi-root workspace you pick
-which one), and the `publisher` in `vscode/package.json` must match your
+In a multi-root workspace each folder with a config runs its own `synchro`
+process with its own status bar item. The `publisher` in `vscode/package.json` must match your
 Marketplace publisher before publishing.
 
 ### Where the extension gets the binary
@@ -196,10 +196,11 @@ Checks: `npm run check` (type check), `npm test` (unit tests) and
 | File                      | Role                                                                         |
 | ------------------------- | ---------------------------------------------------------------------------- |
 | `vscode/package.json`     | Manifest: commands, settings, activation (`workspaceContains:.synchro.json`) |
-| `vscode/src/extension.ts` | Commands and reactions to events                                             |
+| `vscode/src/extension.ts` | Commands, workspace folders and config file watching                         |
+| `vscode/src/session.ts`   | One folder's running process and reactions to its events                     |
 | `vscode/src/process.ts`   | Starting and stopping the binary, splitting output into events               |
 | `vscode/src/events.ts`    | Types and formatting for `--json` events                                     |
-| `vscode/src/status.ts`    | Status bar item                                                              |
+| `vscode/src/status.ts`    | Status bar item (one per folder)                                             |
 | `vscode/src/binary.ts`    | Finding the binary                                                           |
 
 ## Development

@@ -4,9 +4,10 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { resolveBinary } from './binary';
 import { formatEvent, SynchroEvent } from './events';
+import { shortLabels } from './label';
 import { LogView } from './logView';
-import { Launch, runOnce, SynchroProcess } from './process';
-import { Status } from './status';
+import { Launch, runOnce } from './process';
+import { Session } from './session';
 
 const DEFAULT_CONFIG = '.synchro.json';
 
@@ -22,7 +23,7 @@ export function activate(context: vscode.ExtensionContext): void {
     command('synchro.start', () => c.start('--sync')),
     command('synchro.syncAll', () => c.start('--syncAll')),
     command('synchro.stop', () => c.stop()),
-    command('synchro.toggle', () => (c.running ? c.stop() : c.start('--sync'))),
+    vscode.commands.registerCommand('synchro.toggle', (configFile?: string) => c.toggle(configFile)),
     command('synchro.testConnection', () => c.testConnection()),
     command('synchro.setPassword', () => c.setPassword()),
     command('synchro.clearPassword', () => c.clearPassword()),
@@ -33,23 +34,16 @@ export function activate(context: vscode.ExtensionContext): void {
 }
 
 export async function deactivate(): Promise<void> {
-  await controller?.stop();
+  await controller?.stopAll();
 }
 
 class Controller implements vscode.Disposable {
   private readonly output = vscode.window.createOutputChannel('Synchro');
   readonly logView = new LogView();
-  private readonly status = new Status();
-  private readonly disposables: vscode.Disposable[] = [this.output, this.logView, this.status];
+  private readonly disposables: vscode.Disposable[] = [this.output, this.logView];
   private configWatchers: vscode.Disposable[] = [];
-
-  private process?: SynchroProcess;
-  private configFile?: string;
-  private stopRequested = false;
-  private lastError?: string;
-  private watchingTarget?: string;
-  private disconnectNotified = false;
-  private syncAllDone = 0;
+  /** One session per config file of a workspace folder, running or not. */
+  private readonly sessions = new Map<string, Session>();
 
   constructor(private readonly context: vscode.ExtensionContext) {
     this.disposables.push(
@@ -63,67 +57,88 @@ class Controller implements vscode.Disposable {
     this.refreshWorkspace();
   }
 
-  get running(): boolean {
-    return this.process !== undefined;
+  async autoStart(): Promise<void> {
+    const folders = foldersWithConfig().filter((folder) =>
+      vscode.workspace.getConfiguration('synchro', folder.uri).get<boolean>('autoStart', false),
+    );
+    await Promise.all(folders.map((folder) => this.start('--sync', configPath(folder))));
   }
 
-  async autoStart(): Promise<void> {
-    const folders = foldersWithConfig();
-    if (folders.length !== 1) {
+  /** Starts syncing `configFile`, or a folder picked from those not syncing yet. */
+  async start(mode: '--sync' | '--syncAll', configFile?: string): Promise<void> {
+    const session = configFile ? this.sessions.get(configFile) : await this.pickSessionToStart();
+    if (!session) {
       return;
     }
-    const autoStart = vscode.workspace.getConfiguration('synchro', folders[0].uri).get<boolean>('autoStart', false);
-    if (autoStart) {
-      await this.start('--sync');
-    }
-  }
-
-  async start(mode: '--sync' | '--syncAll'): Promise<void> {
-    if (this.process) {
-      const action = await vscode.window.showInformationMessage('Synchro is already running.', 'Restart', 'Show log');
+    if (session.running) {
+      const action = await vscode.window.showInformationMessage(`${session.name} is already running.`, 'Restart', 'Show log');
       if (action === 'Restart') {
-        await this.stop();
-        await this.start(mode);
+        await session.stop();
+        await this.start(mode, session.configFile);
       } else if (action === 'Show log') {
         void this.showLog();
       }
       return;
     }
-    const folder = await pickConfiguredFolder('Select the folder to sync');
-    if (!folder) {
-      return;
-    }
-    const configFile = configPath(folder);
     const args: string[] = [mode];
     if (vscode.workspace.getConfiguration('synchro').get<boolean>('quiet', false)) {
       args.push('--quiet');
     }
-    const launch = await this.launch(configFile, args);
-
-    this.configFile = configFile;
-    this.stopRequested = false;
-    this.lastError = undefined;
-    this.watchingTarget = undefined;
-    this.disconnectNotified = false;
-    this.status.set({ kind: 'connecting' });
-    this.log(`--- ${launch.binary} ${args.join(' ')}  (${configFile})`);
-
-    const proc = new SynchroProcess(launch, {
-      event: (e) => this.handleEvent(e),
-      text: (line) => this.handleText(line),
-    });
-    this.process = proc;
-    void proc.exited.then((code) => this.handleExit(proc, code));
+    session.start(await this.launch(session.configFile, args));
   }
 
-  async stop(): Promise<void> {
-    const proc = this.process;
-    if (!proc) {
-      return;
+  private async pickSessionToStart(): Promise<Session | undefined> {
+    const folders = foldersWithConfig();
+    if (folders.length === 0) {
+      await offerCreateConfig();
+      return undefined;
     }
-    this.stopRequested = true;
-    this.status.set({ kind: 'stopping' });
-    await proc.stop();
+    this.syncSessions();
+    const idle = folders.filter((folder) => !this.sessions.get(configPath(folder))?.running);
+    if (idle.length === 0 && folders.length > 1) {
+      const action = await vscode.window.showInformationMessage('Synchro is already running in every folder.', 'Show log');
+      if (action === 'Show log') {
+        void this.showLog();
+      }
+      return undefined;
+    }
+    // With a single folder that is already running, start() offers a restart.
+    const folder = idle.length === 0 ? folders[0] : await pickFolder(idle, 'Select the folder to sync');
+    return folder && this.sessions.get(configPath(folder));
+  }
+
+  /** Stops `configFile`, or the running folder (picked when several are running). */
+  async stop(configFile?: string): Promise<void> {
+    const running = [...this.sessions.values()].filter((s) => s.running);
+    let targets: Session[];
+    if (configFile) {
+      targets = running.filter((s) => s.configFile === configFile);
+    } else if (running.length <= 1) {
+      targets = running;
+    } else {
+      const picked = await vscode.window.showQuickPick(
+        [
+          { label: 'All folders', sessions: running },
+          ...running.map((s) => ({ label: s.folder.name, description: s.folder.uri.fsPath, sessions: [s] })),
+        ],
+        { placeHolder: 'Select the folder to stop' },
+      );
+      targets = picked?.sessions ?? [];
+    }
+    await Promise.all(targets.map((s) => s.stop()));
+  }
+
+  async stopAll(): Promise<void> {
+    await Promise.all([...this.sessions.values()].map((s) => s.stop()));
+  }
+
+  /** Status bar click: toggles its folder. Without a folder, stops if anything runs. */
+  async toggle(configFile?: string): Promise<void> {
+    if (typeof configFile !== 'string') {
+      const anyRunning = [...this.sessions.values()].some((s) => s.running);
+      return anyRunning ? this.stop() : this.start('--sync');
+    }
+    return this.sessions.get(configFile)?.running ? this.stop(configFile) : this.start('--sync', configFile);
   }
 
   async createConfig(): Promise<void> {
@@ -161,7 +176,7 @@ class Controller implements vscode.Disposable {
     } finally {
       fs.rmSync(scratch, { recursive: true, force: true });
     }
-    this.refreshWorkspace();
+    this.syncSessions();
     await vscode.window.showTextDocument(vscode.Uri.file(configFile));
     const action = await vscode.window.showInformationMessage(
       'Synchro config created. Fill in the server details, then test the connection. For password auth use "Synchro: Set password" to keep the secret out of the file.',
@@ -180,21 +195,25 @@ class Controller implements vscode.Disposable {
     if (!folder) {
       return;
     }
-    const launch = await this.launch(configPath(folder), ['--test']);
+    const configFile = configPath(folder);
+    this.syncSessions();
+    const session = this.sessions.get(configFile);
+    const log = (line: string, level?: SynchroEvent['level']) => (session ? session.log(line, level) : this.log(line, level));
+    const launch = await this.launch(configFile, ['--test']);
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Notification, title: 'Synchro: testing connection…' },
+      { location: vscode.ProgressLocation.Notification, title: `${session?.name ?? 'Synchro'}: testing connection…` },
       () =>
         runOnce(launch, {
-          event: (e) => this.logEvent(e),
-          text: (line) => this.log(line),
+          event: (e) => log(formatEvent(e), e.level),
+          text: (line) => log(line),
         }),
     );
     const success = result.events.find((e) => e.event === 'success');
     if (result.code === 0 && success && success.event === 'success') {
-      void vscode.window.showInformationMessage(`Synchro: ${success.message}`);
+      void vscode.window.showInformationMessage(`${session?.name ?? 'Synchro'}: ${success.message}`);
       return;
     }
-    await this.reportFailure('Connection test failed', result.events);
+    await this.reportFailure('Connection test failed', result.events, session?.name);
   }
 
   async setPassword(): Promise<void> {
@@ -211,7 +230,8 @@ class Controller implements vscode.Disposable {
     if (password === undefined) {
       return;
     }
-    const key = secretKey(configPath(folder));
+    const configFile = configPath(folder);
+    const key = secretKey(configFile);
     if (password === '') {
       await this.context.secrets.delete(key);
       void vscode.window.showInformationMessage('Synchro password cleared.');
@@ -219,7 +239,7 @@ class Controller implements vscode.Disposable {
     }
     await this.context.secrets.store(key, password);
     void vscode.window.showInformationMessage(
-      this.running ? 'Synchro password saved. Restart syncing to use it.' : 'Synchro password saved.',
+      this.sessions.get(configFile)?.running ? 'Synchro password saved. Restart syncing to use it.' : 'Synchro password saved.',
     );
   }
 
@@ -252,7 +272,7 @@ class Controller implements vscode.Disposable {
   }
 
   /** Writes a line to both the Synchro panel tab and the "Synchro" output channel. */
-  private log(line: string, level?: SynchroEvent['level']): void {
+  log(line: string, level?: SynchroEvent['level']): void {
     this.output.appendLine(line);
     this.logView.append(line, level);
   }
@@ -261,133 +281,67 @@ class Controller implements vscode.Disposable {
     this.log(formatEvent(e), e.level);
   }
 
-  private handleEvent(e: SynchroEvent): void {
-    this.logEvent(e);
-    switch (e.event) {
-      case 'connected':
-        if (this.disconnectNotified) {
-          this.disconnectNotified = false;
-          void vscode.window.showInformationMessage(`Synchro reconnected to ${e.host}.`);
-        }
-        if (this.watchingTarget) {
-          this.status.set({ kind: 'watching', target: this.watchingTarget });
-        }
-        break;
-      case 'disconnected':
-        this.status.set({ kind: 'disconnected' });
-        if (!this.disconnectNotified) {
-          this.disconnectNotified = true;
-          void this.warn('Synchro lost the connection and is reconnecting.');
-        }
-        break;
-      case 'syncAllStart':
-        this.syncAllDone = 0;
-        this.status.set({ kind: 'syncAll', done: 0, total: e.total });
-        break;
-      case 'upload': {
-        const current = this.status.current;
-        if (current.kind === 'syncAll') {
-          this.syncAllDone++;
-          this.status.set({ kind: 'syncAll', done: this.syncAllDone, total: current.total });
-        }
-        break;
-      }
-      case 'syncAllDone':
-        if (e.uploaded < e.total && !this.stopRequested) {
-          void this.warn(`Synchro full sync uploaded ${e.uploaded} of ${e.total} files.`);
-        }
-        break;
-      case 'watching':
-        this.watchingTarget = e.remote;
-        this.status.set({ kind: 'watching', target: e.remote });
-        break;
-      case 'error':
-        this.lastError = e.message;
-        this.status.addError();
-        break;
-      case 'stopping':
-        this.status.set({ kind: 'stopping' });
-        break;
-    }
-  }
-
-  private handleText(line: string): void {
-    this.log(line);
-    if (line.startsWith('Failed to start')) {
-      this.lastError = line;
-    }
-  }
-
-  private handleExit(proc: SynchroProcess, code: number | null): void {
-    if (this.process !== proc) {
-      return;
-    }
-    this.process = undefined;
-    this.status.set({ kind: 'stopped' });
-    this.refreshWorkspace();
-    this.log(`--- synchro exited with code ${code ?? 'none'}`);
-    if (!this.stopRequested && code !== 0) {
-      void this.showExitError(this.lastError ?? `synchro exited with code ${code ?? 'none'}`);
-    }
-  }
-
-  private async showExitError(message: string): Promise<void> {
-    const notFound = message.startsWith('Failed to start') && message.includes('ENOENT');
-    const buttons = notFound ? ['Open settings', 'Show log'] : ['Show log'];
-    const text = notFound
-      ? 'Synchro binary not found. Install synchro on PATH or set "synchro.binaryPath".'
-      : `Synchro stopped: ${message}`;
-    const action = await vscode.window.showErrorMessage(text, ...buttons);
-    if (action === 'Open settings') {
-      await vscode.commands.executeCommand('workbench.action.openSettings', 'synchro.binaryPath');
-    } else if (action === 'Show log') {
-      void this.showLog();
-    }
-  }
-
-  private async reportFailure(title: string, events: SynchroEvent[]): Promise<void> {
+  private async reportFailure(title: string, events: SynchroEvent[], name = 'Synchro'): Promise<void> {
     const errors = events.filter((e) => e.event === 'error').map((e) => (e.event === 'error' ? e.message : ''));
-    const detail = errors[0] ?? this.lastError ?? 'see the Synchro output for details';
-    const action = await vscode.window.showErrorMessage(`Synchro: ${title}: ${detail}`, 'Show log');
+    const detail = errors[0] ?? 'see the Synchro output for details';
+    const action = await vscode.window.showErrorMessage(`${name}: ${title}: ${detail}`, 'Show log');
     if (action === 'Show log') {
       void this.showLog();
     }
   }
 
-  private async warn(message: string): Promise<void> {
-    const action = await vscode.window.showWarningMessage(message, 'Show log');
-    if (action === 'Show log') {
-      void this.showLog();
-    }
-  }
-
-  /** Re-evaluates which folders have a config: status bar visibility and file watchers. */
+  /** Re-evaluates which folders have a config: sessions and config file watchers. */
   private refreshWorkspace(): void {
-    this.status.setVisible(foldersWithConfig().length > 0);
+    this.syncSessions();
     this.configWatchers.forEach((d) => d.dispose());
     this.configWatchers = (vscode.workspace.workspaceFolders ?? []).map((folder) => {
       const relative = path.relative(folder.uri.fsPath, configPath(folder)).split(path.sep).join('/');
       const watcher = vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(folder, relative));
-      watcher.onDidCreate(() => this.status.setVisible(true));
-      watcher.onDidDelete(() => this.status.setVisible(foldersWithConfig().length > 0));
+      watcher.onDidCreate(() => this.syncSessions());
+      watcher.onDidDelete(() => this.syncSessions());
       watcher.onDidChange((uri) => void this.offerRestart(uri.fsPath));
       return watcher;
     });
   }
 
+  /**
+   * Keeps one session per folder with a config. A running session whose config
+   * disappeared stays until its process exits.
+   */
+  private syncSessions(): void {
+    const configured = new Map(foldersWithConfig().map((folder) => [configPath(folder), folder]));
+    for (const [configFile, session] of this.sessions) {
+      if (!configured.has(configFile) && !session.running) {
+        session.dispose();
+        this.sessions.delete(configFile);
+      }
+    }
+    for (const [configFile, folder] of configured) {
+      if (!this.sessions.has(configFile)) {
+        this.sessions.set(configFile, new Session(folder, configFile, this, () => this.syncSessions()));
+      }
+    }
+    const sessions = [...this.sessions.values()];
+    const multiRoot = (vscode.workspace.workspaceFolders ?? []).length > 1;
+    const short = shortLabels(sessions.map((s) => s.folder.name));
+    sessions.forEach((s, i) => s.setLabel(multiRoot ? { name: s.folder.name, short: short[i] } : undefined));
+  }
+
   private async offerRestart(changedFile: string): Promise<void> {
-    if (!this.process || this.configFile !== changedFile) {
+    const session = this.sessions.get(changedFile);
+    if (!session?.running) {
       return;
     }
-    const action = await vscode.window.showInformationMessage('Synchro config changed. Restart syncing to apply it?', 'Restart');
+    const action = await vscode.window.showInformationMessage(`${session.name} config changed. Restart syncing to apply it?`, 'Restart');
     if (action === 'Restart') {
-      await this.stop();
-      await this.start('--sync');
+      await session.stop();
+      await this.start('--sync', changedFile);
     }
   }
 
   dispose(): void {
     this.configWatchers.forEach((d) => d.dispose());
+    this.sessions.forEach((s) => s.dispose());
     this.disposables.forEach((d) => d.dispose());
   }
 }

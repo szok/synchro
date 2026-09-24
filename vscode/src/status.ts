@@ -8,25 +8,27 @@ export type State =
   | { kind: 'disconnected' }
   | { kind: 'stopping' };
 
-/** Status bar item showing the sync state; clicking it toggles syncing. */
+/** Status bar item of one folder showing its sync state; clicking it toggles that folder. */
 export class Status implements vscode.Disposable {
-  private readonly item = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 50);
+  private readonly item: vscode.StatusBarItem;
   private errors = 0;
   private state: State = { kind: 'stopped' };
+  /** Full folder name for the tooltip and short one for the text. */
+  private label?: { name: string; short: string };
 
-  constructor() {
+  constructor(configFile: string) {
+    this.item = vscode.window.createStatusBarItem(`synchro.status:${configFile}`, vscode.StatusBarAlignment.Left, 50);
     this.item.name = 'Synchro';
-    this.item.command = 'synchro.toggle';
+    this.item.command = { title: 'Toggle sync', command: 'synchro.toggle', arguments: [configFile] };
     this.render();
+    this.item.show();
   }
 
-  /** Shows the item only in workspaces that use Synchro. */
-  setVisible(visible: boolean): void {
-    if (visible || this.state.kind !== 'stopped') {
-      this.item.show();
-    } else {
-      this.item.hide();
-    }
+  /** Folder name shown instead of "Synchro" when several folders use Synchro. */
+  setLabel(label: { name: string; short: string } | undefined): void {
+    this.label = label;
+    this.item.name = label ? `Synchro (${label.name})` : 'Synchro';
+    this.render();
   }
 
   set(state: State): void {
@@ -48,39 +50,43 @@ export class Status implements vscode.Disposable {
 
   private render(): void {
     const s = this.state;
-    let text: string;
+    const name = this.label ? `Synchro (${this.label.name})` : 'Synchro';
+    let icon: string;
+    let progress = '';
     let tooltip: string;
     this.item.backgroundColor = undefined;
     switch (s.kind) {
       case 'stopped':
-        text = '$(circle-slash) Synchro';
-        tooltip = 'Synchro is stopped — click to start syncing';
+        icon = '$(circle-slash)';
+        tooltip = `${name} is stopped — click to start syncing`;
         break;
       case 'connecting':
-        text = '$(sync~spin) Synchro';
-        tooltip = 'Synchro is connecting — click to stop';
+        icon = '$(sync~spin)';
+        tooltip = `${name} is connecting — click to stop`;
         break;
       case 'syncAll':
-        text = s.total > 0 ? `$(sync~spin) Synchro ${s.done}/${s.total}` : '$(sync~spin) Synchro';
-        tooltip = 'Synchro is uploading all files — click to stop';
+        icon = '$(sync~spin)';
+        progress = s.total > 0 ? ` ${s.done}/${s.total}` : '';
+        tooltip = `${name} is uploading all files — click to stop`;
         break;
       case 'watching':
-        text = '$(check) Synchro';
-        tooltip = `Synchro is syncing to ${s.target} — click to stop`;
+        icon = '$(check)';
+        tooltip = `${name} is syncing to ${s.target} — click to stop`;
         break;
       case 'disconnected':
-        text = '$(warning) Synchro';
-        tooltip = 'Synchro lost the connection and is reconnecting — click to stop';
+        icon = '$(warning)';
+        tooltip = `${name} lost the connection and is reconnecting — click to stop`;
         this.item.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
         break;
       case 'stopping':
-        text = '$(loading~spin) Synchro';
-        tooltip = 'Synchro is finishing in-flight operations';
+        icon = '$(loading~spin)';
+        tooltip = `${name} is finishing in-flight operations`;
         break;
     }
+    let text = `${icon} ${this.label?.short ?? 'Synchro'}${progress}`;
     if (this.errors > 0 && s.kind !== 'stopped') {
       text += ` $(error) ${this.errors}`;
-      tooltip += `\n${this.errors} error(s) — see the Synchro output`;
+      tooltip += `\n${this.errors} error(s) — see the Synchro log`;
     }
     this.item.text = text;
     this.item.tooltip = tooltip;

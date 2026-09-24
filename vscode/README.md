@@ -30,20 +30,26 @@ background (it is bundled with the extension) and shows its status in VS Code.
 The status bar item shows the state (stopped, connecting, full-sync progress,
 syncing, reconnecting) and the number of errors; click it to start or stop.
 
+In a multi-root workspace every folder with a config syncs on its own: each
+gets its own status bar item labelled with the folder's initials
+(`ring-websites-cdh-web` → `rwcw`, camelCase, `-` and `_` split words; hover
+for the full name), Start/Stop ask which
+folder (Stop also offers "All folders"), and log lines are prefixed with
+`[folder]`.
+
 ## Settings
 
 | Setting              | Default         | Description                                                                      |
 | -------------------- | --------------- | -------------------------------------------------------------------------------- |
 | `synchro.binaryPath` | empty           | Custom `synchro` binary. Empty uses the bundled one, then `synchro` from `PATH`. |
 | `synchro.configPath` | `.synchro.json` | Config file relative to the workspace folder. Synchro runs from its directory.   |
-| `synchro.autoStart`  | `false`         | Start syncing when a workspace with a config opens.                              |
+| `synchro.autoStart`  | `false`         | Start syncing when a workspace with a config opens (can be set per folder).      |
 | `synchro.quiet`      | `false`         | Do not log every file operation.                                                 |
 
 A password stored with **Set password** overrides `password` from the config file.
 
 ## Notes
 
-- One folder syncs at a time; in a multi-root workspace you pick which one.
 - Synchro currently accepts any SSH host key — use it on trusted networks.
 
 ## Development

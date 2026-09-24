@@ -5,6 +5,12 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-09-24
+
+### Added
+
+- [@pjarolewski]: Multi-root workspaces: every folder with a config can sync at the same time, with its own status bar item labelled with the folder's initials (full name in the tooltip), `[folder]`-prefixed log lines, a folder picker in Stop (including "All folders") and per-folder `synchro.autoStart`
+
 ## [0.2.0] - 2026-09-24
 
 ### Added

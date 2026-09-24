@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -92,7 +92,7 @@
     "watch": "npm run build -- --watch",
     "vscode:prepublish": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --minify --outfile=out/extension.js",
     "check": "tsc --noEmit",
-    "test": "esbuild src/events.test.ts --bundle --platform=node --target=node20 --format=cjs --outfile=out/test/events.test.js && node --test out/test/",
+    "test": "esbuild src/*.test.ts --bundle --platform=node --target=node20 --format=cjs --outdir=out/test && node --test out/test/",
     "package": "vsce package"
   },
   "devDependencies": {
