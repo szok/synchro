@@ -4,6 +4,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import { resolveBinary } from './binary';
 import { formatEvent, SynchroEvent } from './events';
+import { LogView } from './logView';
 import { Launch, runOnce, SynchroProcess } from './process';
 import { Status } from './status';
 
@@ -25,7 +26,8 @@ export function activate(context: vscode.ExtensionContext): void {
     command('synchro.testConnection', () => c.testConnection()),
     command('synchro.setPassword', () => c.setPassword()),
     command('synchro.clearPassword', () => c.clearPassword()),
-    command('synchro.showLog', () => c.output.show()),
+    command('synchro.showLog', () => c.showLog()),
+    command('synchro.clearLog', () => c.logView.clear()),
   );
   void c.autoStart();
 }
@@ -35,9 +37,10 @@ export async function deactivate(): Promise<void> {
 }
 
 class Controller implements vscode.Disposable {
-  readonly output = vscode.window.createOutputChannel('Synchro');
+  private readonly output = vscode.window.createOutputChannel('Synchro');
+  readonly logView = new LogView();
   private readonly status = new Status();
-  private readonly disposables: vscode.Disposable[] = [this.output, this.status];
+  private readonly disposables: vscode.Disposable[] = [this.output, this.logView, this.status];
   private configWatchers: vscode.Disposable[] = [];
 
   private process?: SynchroProcess;
@@ -82,7 +85,7 @@ class Controller implements vscode.Disposable {
         await this.stop();
         await this.start(mode);
       } else if (action === 'Show log') {
-        this.output.show();
+        void this.showLog();
       }
       return;
     }
@@ -103,7 +106,7 @@ class Controller implements vscode.Disposable {
     this.watchingTarget = undefined;
     this.disconnectNotified = false;
     this.status.set({ kind: 'connecting' });
-    this.output.appendLine(`--- ${launch.binary} ${args.join(' ')}  (${configFile})`);
+    this.log(`--- ${launch.binary} ${args.join(' ')}  (${configFile})`);
 
     const proc = new SynchroProcess(launch, {
       event: (e) => this.handleEvent(e),
@@ -145,7 +148,7 @@ class Controller implements vscode.Disposable {
     try {
       const result = await runOnce(
         { binary: resolveBinary(this.context), args: ['--init'], cwd: scratch, env: process.env },
-        { event: (e) => this.output.appendLine(formatEvent(e)), text: (line) => this.output.appendLine(line) },
+        { event: (e) => this.logEvent(e), text: (line) => this.log(line) },
       );
       const generated = path.join(scratch, DEFAULT_CONFIG);
       if (result.code !== 0 || !fs.existsSync(generated)) {
@@ -182,8 +185,8 @@ class Controller implements vscode.Disposable {
       { location: vscode.ProgressLocation.Notification, title: 'Synchro: testing connection…' },
       () =>
         runOnce(launch, {
-          event: (e) => this.output.appendLine(formatEvent(e)),
-          text: (line) => this.output.appendLine(line),
+          event: (e) => this.logEvent(e),
+          text: (line) => this.log(line),
         }),
     );
     const success = result.events.find((e) => e.event === 'success');
@@ -244,8 +247,22 @@ class Controller implements vscode.Disposable {
     };
   }
 
+  async showLog(): Promise<void> {
+    await this.logView.show();
+  }
+
+  /** Writes a line to both the Synchro panel tab and the "Synchro" output channel. */
+  private log(line: string, level?: SynchroEvent['level']): void {
+    this.output.appendLine(line);
+    this.logView.append(line, level);
+  }
+
+  private logEvent(e: SynchroEvent): void {
+    this.log(formatEvent(e), e.level);
+  }
+
   private handleEvent(e: SynchroEvent): void {
-    this.output.appendLine(formatEvent(e));
+    this.logEvent(e);
     switch (e.event) {
       case 'connected':
         if (this.disconnectNotified) {
@@ -295,7 +312,7 @@ class Controller implements vscode.Disposable {
   }
 
   private handleText(line: string): void {
-    this.output.appendLine(line);
+    this.log(line);
     if (line.startsWith('Failed to start')) {
       this.lastError = line;
     }
@@ -308,7 +325,7 @@ class Controller implements vscode.Disposable {
     this.process = undefined;
     this.status.set({ kind: 'stopped' });
     this.refreshWorkspace();
-    this.output.appendLine(`--- synchro exited with code ${code ?? 'none'}`);
+    this.log(`--- synchro exited with code ${code ?? 'none'}`);
     if (!this.stopRequested && code !== 0) {
       void this.showExitError(this.lastError ?? `synchro exited with code ${code ?? 'none'}`);
     }
@@ -324,7 +341,7 @@ class Controller implements vscode.Disposable {
     if (action === 'Open settings') {
       await vscode.commands.executeCommand('workbench.action.openSettings', 'synchro.binaryPath');
     } else if (action === 'Show log') {
-      this.output.show();
+      void this.showLog();
     }
   }
 
@@ -333,14 +350,14 @@ class Controller implements vscode.Disposable {
     const detail = errors[0] ?? this.lastError ?? 'see the Synchro output for details';
     const action = await vscode.window.showErrorMessage(`Synchro: ${title}: ${detail}`, 'Show log');
     if (action === 'Show log') {
-      this.output.show();
+      void this.showLog();
     }
   }
 
   private async warn(message: string): Promise<void> {
     const action = await vscode.window.showWarningMessage(message, 'Show log');
     if (action === 'Show log') {
-      this.output.show();
+      void this.showLog();
     }
   }
 

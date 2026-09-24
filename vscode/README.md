@@ -25,7 +25,7 @@ background (it is bundled with the extension) and shows its status in VS Code.
 | Synchro: Stop                          | Stops after in-flight uploads finish                           |
 | Synchro: Test connection               | Checks SSH/SFTP login with the current config                  |
 | Synchro: Set password / Clear password | Manages the password in the OS keychain                        |
-| Synchro: Show log                      | Opens the "Synchro" output channel                             |
+| Synchro: Show log                      | Opens the "Synchro" tab in the bottom panel (also in Output)   |
 
 The status bar item shows the state (stopped, connecting, full-sync progress,
 syncing, reconnecting) and the number of errors; click it to start or stop.

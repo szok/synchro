@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -37,11 +37,25 @@
       { "command": "synchro.testConnection", "title": "Test connection", "category": "Synchro" },
       { "command": "synchro.setPassword", "title": "Set password", "category": "Synchro" },
       { "command": "synchro.clearPassword", "title": "Clear password", "category": "Synchro" },
-      { "command": "synchro.showLog", "title": "Show log", "category": "Synchro" }
+      { "command": "synchro.showLog", "title": "Show log", "category": "Synchro" },
+      { "command": "synchro.clearLog", "title": "Clear log", "category": "Synchro", "icon": "$(clear-all)" }
     ],
+    "viewsContainers": {
+      "panel": [
+        { "id": "synchro", "title": "Synchro", "icon": "$(sync)" }
+      ]
+    },
+    "views": {
+      "synchro": [
+        { "type": "webview", "id": "synchro.log", "name": "Log" }
+      ]
+    },
     "menus": {
       "commandPalette": [
         { "command": "synchro.toggle", "when": "false" }
+      ],
+      "view/title": [
+        { "command": "synchro.clearLog", "when": "view == synchro.log", "group": "navigation" }
       ]
     },
     "configuration": {
