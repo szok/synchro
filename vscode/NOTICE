@@ -1,0 +1,33 @@
+Synchro
+Copyright (C) 2025-2026 Piotr Jarolewski <jarolewski.piotr@gmail.com>
+
+This program is free software: you can redistribute it and/or modify it under
+the terms of the GNU General Public License version 3 as published by the Free
+Software Foundation, with the additional terms below (GPL section 7).
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License in the LICENSE
+file for more details.
+
+This notice applies to every file in this repository, including the VS Code
+extension in the vscode/ directory, unless a file states otherwise.
+
+Additional terms under GPL section 7
+------------------------------------
+
+1. Author attribution (section 7(b)). Conveyed copies and modified versions
+   must preserve the author attribution "by Piotr Jarolewski" in the
+   program's help output (`synchro --help`) and in the documentation (README),
+   together with this NOTICE file. Modified versions may add their own
+   attributions next to it but must not remove or obscure it.
+
+2. Modified versions (section 7(c)). Modified versions must be marked as
+   different from the original and must not be presented as the original
+   Synchro or as made by Piotr Jarolewski.
+
+3. Names and logos (section 7(e)). No rights are granted under trademark law to
+   use the name "Synchro", the SYNCHRO logo, or the author's name to identify
+   or promote a modified version, so distributed modified versions need a
+   different name. Stating truthfully that a work is "based on Synchro by Piotr
+   Jarolewski" is permitted.

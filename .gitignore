@@ -1,0 +1,11 @@
+.synchro.json
+*.log
+/synchro
+/coverage.out
+.idea/
+synchro.exe
+vscode/node_modules/
+vscode/out/
+vscode/bin/
+vscode/dist/
+*.vsix

@@ -1,0 +1,91 @@
+{
+  "name": "synchro",
+  "displayName": "Synchro",
+  "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
+  "version": "0.1.0",
+  "publisher": "pjarolewski",
+  "license": "GPL-3.0-only",
+  "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/szok/synchro"
+  },
+  "engines": {
+    "vscode": "^1.90.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "keywords": [
+    "sftp",
+    "ssh",
+    "sync",
+    "deploy",
+    "remote"
+  ],
+  "main": "./out/extension.js",
+  "activationEvents": [
+    "workspaceContains:.synchro.json"
+  ],
+  "contributes": {
+    "commands": [
+      { "command": "synchro.createConfig", "title": "Create config", "category": "Synchro" },
+      { "command": "synchro.start", "title": "Start sync", "category": "Synchro" },
+      { "command": "synchro.syncAll", "title": "Sync all and watch", "category": "Synchro" },
+      { "command": "synchro.stop", "title": "Stop", "category": "Synchro" },
+      { "command": "synchro.toggle", "title": "Toggle sync", "category": "Synchro" },
+      { "command": "synchro.testConnection", "title": "Test connection", "category": "Synchro" },
+      { "command": "synchro.setPassword", "title": "Set password", "category": "Synchro" },
+      { "command": "synchro.clearPassword", "title": "Clear password", "category": "Synchro" },
+      { "command": "synchro.showLog", "title": "Show log", "category": "Synchro" }
+    ],
+    "menus": {
+      "commandPalette": [
+        { "command": "synchro.toggle", "when": "false" }
+      ]
+    },
+    "configuration": {
+      "title": "Synchro",
+      "properties": {
+        "synchro.binaryPath": {
+          "type": "string",
+          "default": "",
+          "scope": "machine-overridable",
+          "markdownDescription": "Path to the `synchro` binary. Empty uses the binary bundled with the extension, then `synchro` from `PATH`."
+        },
+        "synchro.configPath": {
+          "type": "string",
+          "default": ".synchro.json",
+          "scope": "resource",
+          "markdownDescription": "Config file, relative to the workspace folder. Synchro runs from the file's directory, so a relative `directory` in the config is resolved from there."
+        },
+        "synchro.autoStart": {
+          "type": "boolean",
+          "default": false,
+          "scope": "resource",
+          "description": "Start watching and syncing automatically when a workspace with a Synchro config is opened."
+        },
+        "synchro.quiet": {
+          "type": "boolean",
+          "default": false,
+          "description": "Do not log every uploaded, deleted or created file (passes --quiet)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --sourcemap --outfile=out/extension.js",
+    "watch": "npm run build -- --watch",
+    "vscode:prepublish": "esbuild src/extension.ts --bundle --platform=node --target=node20 --format=cjs --external:vscode --minify --outfile=out/extension.js",
+    "check": "tsc --noEmit",
+    "test": "esbuild src/events.test.ts --bundle --platform=node --target=node20 --format=cjs --outfile=out/test/events.test.js && node --test out/test/",
+    "package": "vsce package"
+  },
+  "devDependencies": {
+    "@types/node": "^20.19.0",
+    "@types/vscode": "~1.90.0",
+    "@vscode/vsce": "~3.7.1",
+    "esbuild": "^0.28.2",
+    "typescript": "~5.9.3"
+  }
+}
