@@ -5,14 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.2] - 2026-09-24
 
 ### Added
 
 - `--json` flag: one JSON event per line on stdout (`start`, `connected`, `upload`, `syncAllDone`, `stopped`, …) for editor integrations
 - `--stop-on-stdin-close` flag: closing stdin stops Synchro gracefully (for parent processes, especially on Windows)
 - `SYNCHRO_PASSWORD` environment variable, which takes precedence over `password` from the config file
-- VS Code extension in `vscode/` with Command Palette commands, a status bar item and a log panel; `make vscode-bin` and `make vscode-package`
+- VS Code extension in `vscode/` with Command Palette commands, a status bar item and a log panel; `make vscode-install-deps`, `make vscode-bin` and `make vscode-package`
 
 ### Changed
 

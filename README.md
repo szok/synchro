@@ -183,6 +183,7 @@ cd vscode && npm install
 code .                # then press F5 and open a project in the new window
 
 # Install like a regular extension
+make vscode-install-deps      # once, and after package-lock.json changes
 make vscode-package
 code --install-extension vscode/dist/synchro-darwin-arm64-0.1.0.vsix
 ```
