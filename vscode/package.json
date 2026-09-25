@@ -2,10 +2,20 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.4.2",
+  "version": "1.0.0",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
+  "icon": "images/icon.png",
+  "galleryBanner": {
+    "color": "#0d1117",
+    "theme": "dark"
+  },
+  "pricing": "Free",
+  "homepage": "https://github.com/szok/synchro/tree/main/vscode#readme",
+  "bugs": {
+    "url": "https://github.com/szok/synchro/issues"
+  },
   "repository": {
     "type": "git",
     "url": "https://github.com/szok/synchro"
@@ -22,7 +32,10 @@
     "ssh",
     "sync",
     "deploy",
-    "remote"
+    "remote",
+    "upload",
+    "watch",
+    "rsync"
   ],
   "main": "./out/extension.js",
   "activationEvents": [
