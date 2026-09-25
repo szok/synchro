@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "0.4.0",
+  "version": "0.4.2",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",

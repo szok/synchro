@@ -24,6 +24,8 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
   private readonly buffer = new LogBuffer(MAX_LINES);
   /** Folders with a tab; empty in a single-folder workspace, where no tabs are shown. */
   private folders: string[] = [];
+  /** Folders whose synchro process is running; the other tabs are greyed out. */
+  private readonly running = new Set<string>();
   /** Folder whose tab is selected, or undefined for "All". Kept here so it survives the view being hidden. */
   private selected?: string;
   private view?: vscode.WebviewView;
@@ -40,7 +42,13 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
     view.webview.onDidReceiveMessage((message) => {
       // The page posts "ready" whenever it (re)loads, e.g. after the panel was hidden.
       if (message?.type === 'ready') {
-        this.post({ type: 'reset', lines: this.buffer.all(), folders: this.folders, selected: this.selected });
+        this.post({
+          type: 'reset',
+          lines: this.buffer.all(),
+          folders: this.folders,
+          running: [...this.running],
+          selected: this.selected,
+        });
       } else if (message?.type === 'select') {
         this.selected = message.folder ?? undefined;
       }
@@ -74,6 +82,19 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
       this.selected = undefined;
     }
     this.post({ type: 'folders', folders, selected: this.selected });
+  }
+
+  /**
+   * Marks a folder's sync as running or stopped; a stopped folder's tab is grey.
+   * @param folder Folder name, as passed to `setFolders`.
+   */
+  setRunning(folder: string, running: boolean): void {
+    if (running) {
+      this.running.add(folder);
+    } else {
+      this.running.delete(folder);
+    }
+    this.post({ type: 'running', running: [...this.running] });
   }
 
   /** Empties the selected folder's tab, or the whole log when "All" is selected. */
@@ -168,9 +189,12 @@ function html(nonce: string): string {
   #tabs button:hover { color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground)); }
   #tabs button[aria-selected="true"] {
     color: var(--vscode-panelTitle-activeForeground, var(--vscode-foreground));
-    border-bottom-color: var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder));
+    /* Same accent as the activity bar's badge (e.g. Git's changed-files count). */
+    border-bottom-color: var(--vscode-activityBarBadge-background, var(--vscode-panelTitle-activeBorder, var(--vscode-focusBorder)));
   }
   #tabs button:focus-visible { outline: 1px solid var(--vscode-focusBorder); outline-offset: 1px; }
+  /* Stopped folder, dimmed like its status bar item. */
+  #tabs .stopped { color: var(--vscode-disabledForeground, var(--vscode-descriptionForeground)); }
   .alert { margin-left: 4px; font-size: 0.8em; }
   #log { white-space: pre-wrap; word-break: break-all; }
   /* Same palette as the CLI's logx package, following the terminal theme. */
@@ -199,6 +223,8 @@ function html(nonce: string): string {
   /** Lines per folder ('' for lines without one), capped like LogBuffer. */
   let lines = new Map();
   let folders = [];
+  /** Folders whose sync is running; the other tabs are grey. */
+  let running = new Set();
   /** Selected folder, or undefined for "All". */
   let selected;
   /** Folder → 'error' | 'warn' for hidden tabs that received one. */
@@ -250,7 +276,9 @@ function html(nonce: string): string {
     const button = document.createElement('button');
     button.setAttribute('role', 'tab');
     button.setAttribute('aria-selected', String(folder === selected));
-    button.append(folder === undefined ? label : span(label, folderColor(folder)));
+    // A folder's tab keeps its colour while it syncs and turns grey when stopped.
+    button.append(folder === undefined ? label : span(label, running.has(folder) ? folderColor(folder) : 'stopped'));
+    if (folder !== undefined && !running.has(folder)) button.title = 'Sync stopped';
     const alert = folder !== undefined && alerts.get(folder);
     if (alert) {
       const dot = span('●', 'alert ' + (alert === 'error' ? 'red' : 'yellow'));
@@ -298,7 +326,12 @@ function html(nonce: string): string {
         lines = new Map();
         data.lines.forEach(store);
         folders = data.folders;
+        running = new Set(data.running);
         select(data.selected, false);
+        break;
+      case 'running':
+        running = new Set(data.running);
+        renderTabs();
         break;
       case 'append':
         append(data.line);

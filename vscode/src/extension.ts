@@ -317,6 +317,14 @@ class Controller implements vscode.Disposable {
   }
 
   /**
+   * Greys out a folder's log tab while its sync is stopped.
+   * @param folder Workspace folder name.
+   */
+  setRunning(folder: string, running: boolean): void {
+    this.logView.setRunning(folder, running);
+  }
+
+  /**
    * Writes a line to both the Synchro panel tab and the "Synchro" output channel.
    * @param folder Log tab of the line; prefixed to the output channel line.
    */

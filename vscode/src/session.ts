@@ -15,6 +15,11 @@ export interface SessionHost {
    * @param folder Folder tab to select; omit to keep the current one.
    */
   showLog(folder?: string): Promise<void>;
+  /**
+   * Reports whether a folder's synchro process is running, for its log tab.
+   * @param folder Workspace folder name.
+   */
+  setRunning(folder: string, running: boolean): void;
 }
 
 /** The synchro process of one workspace folder, with its state and status bar item. */
@@ -73,6 +78,7 @@ export class Session implements vscode.Disposable {
     this.watchingTarget = undefined;
     this.disconnectNotified = false;
     this.status.set({ kind: 'connecting' });
+    this.host.setRunning(this.folder.name, true);
     this.log(`--- ${launch.binary} ${launch.args.join(' ')}`);
 
     const proc = new SynchroProcess(launch, {
@@ -180,6 +186,7 @@ export class Session implements vscode.Disposable {
     }
     this.process = undefined;
     this.status.set({ kind: 'stopped' });
+    this.host.setRunning(this.folder.name, false);
     this.log(`--- synchro exited with code ${code ?? 'none'}`);
     if (!this.stopRequested && code !== 0) {
       void this.showExitError(this.lastError ?? `synchro exited with code ${code ?? 'none'}`);

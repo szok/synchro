@@ -5,6 +5,19 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-09-25
+
+### Changed
+
+- Folder tabs in the Synchro log keep their folder's colour while that folder syncs and turn grey when it is stopped, like its status bar item, instead of only the selected tab being coloured
+
+## [0.4.1] - 2026-09-25
+
+### Changed
+
+- Folder tabs in the Synchro log are grey unless selected; only the selected tab shows its folder's colour
+- The selected tab's underline uses the theme's badge colour (as on the Git changed-files count) instead of the panel's active border
+
 ## [0.4.0] - 2026-09-25
 
 ### Added
