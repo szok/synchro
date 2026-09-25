@@ -8,7 +8,7 @@ LDFLAGS := -X github.com/szok/synchro/internal/version.Version=$(VERSION)
 VSCODE_TARGETS := darwin-arm64:darwin/arm64 darwin-x64:darwin/amd64 \
 	linux-x64:linux/amd64 linux-arm64:linux/arm64 win32-x64:windows/amd64
 
-.PHONY: help build build-windows test test-cover fmt fmt-check vet check clean run vscode-install-deps vscode-bin vscode-package
+.PHONY: help build build-windows test test-cover fmt fmt-check vet check clean run vscode-install-deps vscode-test vscode-check vscode-bin vscode-package
 
 help: ## Show available commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -43,6 +43,12 @@ run: build ## Build and show CLI help.
 
 vscode-install-deps: ## Install the VS Code extension's npm dependencies (npm ci).
 	cd vscode && npm ci
+
+vscode-test: ## Run the VS Code extension tests (run vscode-install-deps first).
+	cd vscode && npm test
+
+vscode-check: ## Type-check, format-check and test the VS Code extension.
+	cd vscode && npm run check && npm test
 
 vscode-bin: ## Build the binary for this machine into vscode/bin (for F5 debugging).
 	mkdir -p vscode/bin
