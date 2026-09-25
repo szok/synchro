@@ -3,7 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as vscode from 'vscode';
 import { resolveBinary } from './binary';
-import { formatEvent, SynchroEvent } from './events';
+import { Entry, eventEntry, formatEntry, SynchroEvent } from './events';
 import { shortLabels } from './label';
 import { LogView } from './logView';
 import { Launch, runOnce } from './process';
@@ -90,7 +90,7 @@ class Controller implements vscode.Disposable {
         await session.stop();
         await this.start(mode, session.configFile);
       } else if (action === 'Show log') {
-        void this.showLog();
+        void session.showLog();
       }
       return;
     }
@@ -225,14 +225,13 @@ class Controller implements vscode.Disposable {
     const configFile = configPath(folder);
     this.syncSessions();
     const session = this.sessions.get(configFile);
-    const log = (line: string, level?: SynchroEvent['level']) =>
-      session ? session.log(line, level) : this.log(line, level);
+    const log = (line: string | Entry) => (session ? session.log(line) : this.log(line));
     const launch = await this.launch(configFile, ['--test']);
     const result = await vscode.window.withProgress(
       { location: vscode.ProgressLocation.Notification, title: `${session?.name ?? 'Synchro'}: testing connection…` },
       () =>
         runOnce(launch, {
-          event: (e) => log(formatEvent(e), e.level),
+          event: (e) => log(eventEntry(e)),
           text: (line) => log(line),
         }),
     );
@@ -241,7 +240,7 @@ class Controller implements vscode.Disposable {
       void vscode.window.showInformationMessage(`${session?.name ?? 'Synchro'}: ${success.message}`);
       return;
     }
-    await this.reportFailure('Connection test failed', result.events, session?.name);
+    await this.reportFailure('Connection test failed', result.events, session);
   }
 
   /**
@@ -309,34 +308,44 @@ class Controller implements vscode.Disposable {
     };
   }
 
-  /** Reveals the Synchro log tab. */
-  async showLog(): Promise<void> {
-    await this.logView.show();
+  /**
+   * Reveals the Synchro log tab.
+   * @param folder Folder tab to select; omit to keep the current one.
+   */
+  async showLog(folder?: string): Promise<void> {
+    await this.logView.show(folder);
   }
 
-  /** Writes a line to both the Synchro panel tab and the "Synchro" output channel. */
-  log(line: string, level?: SynchroEvent['level']): void {
-    this.output.appendLine(line);
-    this.logView.append(line, level);
+  /**
+   * Writes a line to both the Synchro panel tab and the "Synchro" output channel.
+   * @param folder Log tab of the line; prefixed to the output channel line.
+   */
+  log(line: string | Entry, folder?: string): void {
+    const text = typeof line === 'string' ? line : formatEntry(line);
+    this.output.appendLine(folder ? `[${folder}] ${text}` : text);
+    this.logView.append(line, folder);
   }
 
   /** Writes an event to the log as a formatted line. */
   private logEvent(e: SynchroEvent): void {
-    this.log(formatEvent(e), e.level);
+    this.log(eventEntry(e));
   }
 
   /**
    * Shows an error notification with the first error message from `events`.
    * @param title What failed, e.g. "Connection test failed".
    * @param events Events of the failed run.
-   * @param name Session name prefixed to the message.
+   * @param session Session whose name prefixes the message and whose log tab "Show log" opens.
    */
-  private async reportFailure(title: string, events: SynchroEvent[], name = 'Synchro'): Promise<void> {
+  private async reportFailure(title: string, events: SynchroEvent[], session?: Session): Promise<void> {
     const errors = events.filter((e) => e.event === 'error').map((e) => (e.event === 'error' ? e.message : ''));
     const detail = errors[0] ?? 'see the Synchro output for details';
-    const action = await vscode.window.showErrorMessage(`${name}: ${title}: ${detail}`, 'Show log');
+    const action = await vscode.window.showErrorMessage(
+      `${session?.name ?? 'Synchro'}: ${title}: ${detail}`,
+      'Show log',
+    );
     if (action === 'Show log') {
-      void this.showLog();
+      void (session ? session.showLog() : this.showLog());
     }
   }
 
@@ -375,6 +384,7 @@ class Controller implements vscode.Disposable {
     const multiRoot = (vscode.workspace.workspaceFolders ?? []).length > 1;
     const short = shortLabels(sessions.map((s) => s.folder.name));
     sessions.forEach((s, i) => s.setLabel(multiRoot ? { name: s.folder.name, short: short[i] } : undefined));
+    this.logView.setFolders(multiRoot ? sessions.map((s) => s.folder.name) : []);
   }
 
   /**

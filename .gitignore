@@ -9,3 +9,4 @@ vscode/out/
 vscode/bin/
 vscode/dist/
 *.vsix
+.DS_Store

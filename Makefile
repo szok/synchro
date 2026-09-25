@@ -48,8 +48,8 @@ vscode-bin: ## Build the binary for this machine into vscode/bin (for F5 debuggi
 	mkdir -p vscode/bin
 	CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -o vscode/bin/$(BINARY)$(shell go env GOEXE) $(CMD)
 
-vscode-package: ## Build one VS Code extension package (.vsix) per platform into vscode/dist (run vscode-install-deps first).
-	mkdir -p vscode/dist
+vscode-package: ## Build one VS Code extension package (.vsix) per platform into a fresh vscode/dist (run vscode-install-deps first).
+	rm -rf vscode/dist && mkdir -p vscode/dist
 	@set -e; for pair in $(VSCODE_TARGETS); do \
 		target=$${pair%%:*}; platform=$${pair#*:}; goos=$${platform%/*}; goarch=$${platform#*/}; \
 		ext=; [ "$$goos" = windows ] && ext=.exe; \

@@ -1,14 +1,20 @@
 import * as vscode from 'vscode';
-import { formatEvent, SynchroEvent } from './events';
+import { Entry, eventEntry, SynchroEvent } from './events';
 import { Launch, SynchroProcess } from './process';
 import { Status } from './status';
 
 /** What a session needs from the controller: the shared log. */
 export interface SessionHost {
-  /** Appends a line to the shared log. */
-  log(line: string, level?: SynchroEvent['level']): void;
-  /** Reveals the Synchro log tab. */
-  showLog(): Promise<void>;
+  /**
+   * Appends a raw line or a styled event entry to the shared log.
+   * @param folder Log tab of the line; unset in a single-folder workspace.
+   */
+  log(line: string | Entry, folder?: string): void;
+  /**
+   * Reveals the Synchro log tab.
+   * @param folder Folder tab to select; omit to keep the current one.
+   */
+  showLog(folder?: string): Promise<void>;
 }
 
 /** The synchro process of one workspace folder, with its state and status bar item. */
@@ -88,14 +94,19 @@ export class Session implements vscode.Disposable {
     await proc.stop();
   }
 
-  /** Writes a line to the shared log, prefixed with the folder name in a multi-root workspace. */
-  log(line: string, level?: SynchroEvent['level']): void {
-    this.host.log(this.label ? `[${this.label}] ${line}` : line, level);
+  /** Writes a line to the shared log, under this folder's tab in a multi-root workspace. */
+  log(line: string | Entry): void {
+    this.host.log(line, this.label);
+  }
+
+  /** Reveals the log with this folder's tab selected. */
+  async showLog(): Promise<void> {
+    await this.host.showLog(this.label);
   }
 
   /** Writes an event to the shared log as a formatted line. */
   logEvent(e: SynchroEvent): void {
-    this.log(formatEvent(e), e.level);
+    this.log(eventEntry(e));
   }
 
   /** Logs an event and updates the status bar and notifications from it. */
@@ -191,7 +202,7 @@ export class Session implements vscode.Disposable {
     if (action === 'Open settings') {
       await vscode.commands.executeCommand('workbench.action.openSettings', 'synchro.binaryPath');
     } else if (action === 'Show log') {
-      void this.host.showLog();
+      void this.showLog();
     }
   }
 
@@ -199,7 +210,7 @@ export class Session implements vscode.Disposable {
   private async warn(message: string): Promise<void> {
     const action = await vscode.window.showWarningMessage(message, 'Show log');
     if (action === 'Show log') {
-      void this.host.showLog();
+      void this.showLog();
     }
   }
 

@@ -1,6 +1,6 @@
 // Events printed by `synchro --json`, one JSON object per line on stdout.
 // The contract is documented in the repository README ("JSON output").
-/** Severity of an event; drives the log line colour. */
+/** Severity of an event. */
 export type Level = 'info' | 'success' | 'warn' | 'error';
 
 /** Fields shared by every event. */
@@ -55,52 +55,84 @@ function clock(time: string): string {
   return date.toTimeString().slice(0, 8);
 }
 
-/** Renders an event as one human-readable log line for the output channel. */
-export function formatEvent(e: SynchroEvent): string {
-  return `${clock(e.time)} ${describe(e)}`;
+/** Colour of an entry's icon; the same palette as the CLI's `logx` package. */
+export type Color = 'green' | 'red' | 'yellow' | 'cyan' | 'blue' | 'magenta';
+
+/** An event split into the parts the CLI colours separately. */
+export interface Entry {
+  /** Local `HH:MM:SS`. */
+  time: string;
+  icon: string;
+  color: Color;
+  /** Bracketed category such as `[upload]`, shown dimmed. */
+  tag?: string;
+  text: string;
+  /** Emphasises the text, as the CLI does for `connected`. */
+  bold?: boolean;
+  /** Severity of the event; warnings and errors flag a hidden log tab. */
+  level: Level;
 }
 
 /**
- * Renders the message part of an event, without the timestamp.
+ * Splits an event into styled parts matching the CLI's terminal line.
  * @param e Event to describe.
  */
-function describe(e: SynchroEvent): string {
+export function eventEntry(e: SynchroEvent): Entry {
+  const entry = (icon: string, color: Color, text: string, tag?: string): Entry => ({
+    time: clock(e.time),
+    level: e.level,
+    icon,
+    color,
+    text,
+    ...(tag && { tag: `[${tag}]` }),
+  });
   switch (e.event) {
     case 'start':
-      return `synchro ${e.version}`;
+      return entry('ℹ', 'cyan', `synchro ${e.version}`);
     case 'info':
-      return `ℹ ${e.message}`;
+      return entry('ℹ', 'cyan', e.message);
     case 'success':
-      return `✔ ${e.message}`;
+      return entry('✔', 'green', e.message);
     case 'warn':
-      return `⚠ ${e.message}`;
+      return entry('⚠', 'yellow', e.message);
     case 'error':
-      return `✖ ${e.message}`;
+      return entry('✖', 'red', e.message);
     case 'connected':
-      return `⚡ Connected to ${e.username}@${e.host}`;
+      return { ...entry('⚡', 'green', `Connected to ${e.username}@${e.host}`, 'connect'), bold: true };
     case 'disconnected':
-      return `✖ Disconnected — reconnecting in ${e.retryInSeconds}s...`;
+      return entry('✖', 'red', `Disconnected — reconnecting in ${e.retryInSeconds}s...`);
     case 'syncAllStart':
-      return `⟳ Full sync — uploading ${e.total} files with ${e.workers} workers...`;
+      return entry('⟳', 'magenta', `Full sync — uploading ${e.total} files with ${e.workers} workers...`, 'syncAll');
     case 'syncAllDone':
-      return `⟳ Full sync complete: ${e.uploaded}/${e.total} files uploaded.`;
+      return entry('⟳', 'magenta', `Full sync complete: ${e.uploaded}/${e.total} files uploaded.`, 'syncAll');
     case 'watching': {
       const exclude = e.exclude?.length ? `  (excluded: ${e.exclude.join(', ')})` : '';
-      return `◉ Watching ${e.local} → ${e.remote}${exclude}`;
+      return entry('◉', 'cyan', `${e.local} → ${e.remote}${exclude}`, 'watch');
     }
     case 'change':
-      return `~ [${e.change}] ${e.path}`;
+      return entry('~', 'yellow', e.path, e.change);
     case 'upload':
-      return `↑ ${e.path}`;
+      return entry('↑', 'green', e.path, 'upload');
     case 'delete':
-      return `✕ ${e.path}`;
+      return entry('✕', 'red', e.path, 'delete');
     case 'mkdir':
-      return `+ ${e.path}/`;
+      return entry('+', 'blue', `${e.path}/`, 'mkdir');
     case 'rmdir':
-      return `− ${e.path}/`;
+      return entry('−', 'magenta', `${e.path}/`, 'rmdir');
     case 'stopping':
-      return `ℹ Stopping (${e.reason})...`;
+      return entry('ℹ', 'cyan', `Stopping (${e.reason})...`);
     case 'stopped':
-      return '✔ Stopped';
+      return entry('✔', 'green', 'Stopped');
   }
+}
+
+/** Renders an entry as one plain-text line, for the output channel. */
+export function formatEntry(entry: Entry): string {
+  const tag = entry.tag ? `${entry.tag} ` : '';
+  return `${entry.time} ${entry.icon}  ${tag}${entry.text}`;
+}
+
+/** Renders an event as one human-readable log line. */
+export function formatEvent(e: SynchroEvent): string {
+  return formatEntry(eventEntry(e));
 }

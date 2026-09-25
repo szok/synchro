@@ -5,32 +5,44 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-09-25
+
+### Added
+
+- Multi-root workspaces: the Synchro log tab has a sub-tab per folder plus "All", where each line is prefixed with its folder name in the folder's colour; a red or yellow dot marks a hidden folder tab that received errors or warnings
+- "Show log" in a folder's notifications opens that folder's log tab; Clear log empties only the selected tab
+
+### Changed
+
+- Log lines are coloured like the CLI: dimmed time, coloured icon, dimmed `[upload]`-style tag, plain text
+- The 5000-line log limit applies per folder, so a busy folder no longer pushes out a quiet one's log
+
 ## [0.3.2] - 2026-09-24
 
 ### Changed
 
-- [@pjarolewski]: Requires Node.js 24 or newer for development (`engines.node`)
-- [@pjarolewski]: Upgraded TypeScript to 7.0 and `@vscode/vsce` to 4.0
-- [@pjarolewski]: Added Prettier (`npm run format`; `npm run check` now also verifies formatting) and formatted the sources
-- [@pjarolewski]: Documented every function, class and exported type with JSDoc comments
+- Requires Node.js 24 or newer for development (`engines.node`)
+- Upgraded TypeScript to 7.0 and `@vscode/vsce` to 4.0
+- Added Prettier (`npm run format`; `npm run check` now also verifies formatting) and formatted the sources
+- Documented every function, class and exported type with JSDoc comments
 
 ## [0.3.1] - 2026-09-24
 
 ### Changed
 
-- [@pjarolewski]: Status bar uses a single cloud-upload icon, dimmed when stopped and green while syncing; lost connection shows a disconnect icon
+- Status bar uses a single cloud-upload icon, dimmed when stopped and green while syncing; lost connection shows a disconnect icon
 
 ## [0.3.0] - 2026-09-24
 
 ### Added
 
-- [@pjarolewski]: Multi-root workspaces: every folder with a config can sync at the same time, with its own status bar item labelled with the folder's initials (full name in the tooltip), `[folder]`-prefixed log lines, a folder picker in Stop (including "All folders") and per-folder `synchro.autoStart`
+- Multi-root workspaces: every folder with a config can sync at the same time, with its own status bar item labelled with the folder's initials (full name in the tooltip), `[folder]`-prefixed log lines, a folder picker in Stop (including "All folders") and per-folder `synchro.autoStart`
 
 ## [0.2.0] - 2026-09-24
 
 ### Added
 
-- [@pjarolewski]: Added a "Synchro" tab in the bottom panel with a colored live log, the CLI logo and a Clear log button; Show log now opens it
+- Added a "Synchro" tab in the bottom panel with a colored live log, the CLI logo and a Clear log button; Show log now opens it
 
 ## [0.1.0] - 2026-09-24
 
