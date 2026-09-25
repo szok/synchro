@@ -16,7 +16,23 @@ Synchro is a lightweight command-line program written in Go. It watches a local 
 
 For compatibility with the original Node implementation, the program currently accepts any SSH host key. That makes first use convenient but does **not** protect against a machine-in-the-middle attack. Use a trusted network until a known-hosts verification policy is configured.
 
-## Build and install
+## Install
+
+Prebuilt binaries for macOS, Linux and Windows (amd64 and arm64) are attached
+to every [GitHub release](https://github.com/szok/synchro/releases), with
+SHA-256 sums in `checksums.txt`:
+
+```bash
+# macOS on Apple Silicon; pick the archive for your platform
+curl -LO https://github.com/szok/synchro/releases/latest/download/synchro_1.3.3_darwin_arm64.tar.gz
+tar -xzf synchro_1.3.3_darwin_arm64.tar.gz
+mv synchro_1.3.3_darwin_arm64/synchro ~/.local/bin/
+```
+
+On macOS a binary downloaded with a browser is quarantined; if it is blocked, run
+`xattr -d com.apple.quarantine ~/.local/bin/synchro`.
+
+## Build from source
 
 ```bash
 go build -o synchro ./cmd/synchro

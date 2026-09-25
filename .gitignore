@@ -2,6 +2,7 @@
 *.log
 /synchro
 /coverage.out
+/dist/
 .idea/
 synchro.exe
 vscode/node_modules/

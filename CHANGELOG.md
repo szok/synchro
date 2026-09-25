@@ -5,10 +5,11 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.3.3] - 2026-09-25
 
 ### Added
 
+- Prebuilt binaries for macOS, Linux and Windows (amd64 and arm64) with SHA-256 checksums, attached to GitHub releases by a workflow on `v*` tags; `make release` builds the same archives locally
 - `make vscode-test` (runs the VS Code extension tests) and `make vscode-check` (type-check, format-check and tests)
 
 ## [1.3.2] - 2026-09-24

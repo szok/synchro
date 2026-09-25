@@ -8,7 +8,11 @@ LDFLAGS := -X github.com/szok/synchro/internal/version.Version=$(VERSION)
 VSCODE_TARGETS := darwin-arm64:darwin/arm64 darwin-x64:darwin/amd64 \
 	linux-x64:linux/amd64 linux-arm64:linux/arm64 win32-x64:windows/amd64
 
-.PHONY: help build build-windows test test-cover fmt fmt-check vet check clean run vscode-install-deps vscode-test vscode-check vscode-bin vscode-package
+# GOOS/GOARCH pairs for the CLI archives attached to GitHub releases.
+RELEASE_TARGETS := darwin/arm64 darwin/amd64 linux/amd64 linux/arm64 \
+	windows/amd64 windows/arm64
+
+.PHONY: help build build-windows test test-cover fmt fmt-check vet check clean run vscode-install-deps vscode-test vscode-check vscode-bin vscode-package release
 
 help: ## Show available commands.
 	@grep -E '^[a-zA-Z_-]+:.*?## ' $(MAKEFILE_LIST) | \
@@ -66,6 +70,23 @@ vscode-package: ## Build one VS Code extension package (.vsix) per platform into
 	done
 	rm -rf vscode/bin
 
+release: ## Build CLI archives (.tar.gz, .zip on Windows) and checksums.txt into a fresh dist.
+	rm -rf dist && mkdir -p dist
+	@set -e; for platform in $(RELEASE_TARGETS); do \
+		goos=$${platform%/*}; goarch=$${platform#*/}; \
+		ext=; [ "$$goos" = windows ] && ext=.exe; \
+		name=$(BINARY)_$(VERSION)_$${goos}_$${goarch}; \
+		echo "==> $$name"; \
+		mkdir -p dist/$$name; \
+		GOOS=$$goos GOARCH=$$goarch CGO_ENABLED=0 go build -trimpath -ldflags "-s -w $(LDFLAGS)" -o dist/$$name/$(BINARY)$$ext $(CMD); \
+		cp LICENSE NOTICE README.md CHANGELOG.md dist/$$name/; \
+		if [ "$$goos" = windows ]; then (cd dist && zip -qr $$name.zip $$name); \
+		else tar -czf dist/$$name.tar.gz -C dist $$name; fi; \
+		rm -rf dist/$$name; \
+	done
+	cd dist && shasum -a 256 * > checksums.txt
+
 clean: ## Remove build and coverage artifacts.
 	rm -f $(BINARY) $(BINARY).exe coverage.out
+	rm -rf dist
 	rm -rf vscode/bin vscode/out vscode/dist
