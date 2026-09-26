@@ -24,9 +24,9 @@ SHA-256 sums in `checksums.txt`:
 
 ```bash
 # macOS on Apple Silicon; pick the archive for your platform
-curl -LO https://github.com/szok/synchro/releases/latest/download/synchro_1.3.3_darwin_arm64.tar.gz
-tar -xzf synchro_1.3.3_darwin_arm64.tar.gz
-mv synchro_1.3.3_darwin_arm64/synchro ~/.local/bin/
+curl -LO https://github.com/szok/synchro/releases/latest/download/synchro_1.4.0_darwin_arm64.tar.gz
+tar -xzf synchro_1.4.0_darwin_arm64.tar.gz
+mv synchro_1.4.0_darwin_arm64/synchro ~/.local/bin/
 ```
 
 On macOS a binary downloaded with a browser is quarantined; if it is blocked, run
