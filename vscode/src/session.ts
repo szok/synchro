@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import * as vscode from 'vscode';
+import { withExclude } from './configFile';
 import { Entry, eventEntry, SynchroEvent } from './events';
 import { Launch, SynchroProcess } from './process';
 import { Status } from './status';
@@ -29,6 +32,8 @@ export class Session implements vscode.Disposable {
   private stopRequested = false;
   private lastError?: string;
   private watchingTarget?: string;
+  /** Absolute local directory being synced, from the `watching` event. */
+  private localRoot?: string;
   private disconnectNotified = false;
   private syncAllDone = 0;
   /** Folder name shown in logs and messages; only set when the workspace has several folders. */
@@ -76,6 +81,7 @@ export class Session implements vscode.Disposable {
     this.stopRequested = false;
     this.lastError = undefined;
     this.watchingTarget = undefined;
+    this.localRoot = undefined;
     this.disconnectNotified = false;
     this.status.set({ kind: 'connecting' });
     this.host.setRunning(this.folder.name, true);
@@ -154,7 +160,12 @@ export class Session implements vscode.Disposable {
         break;
       case 'watching':
         this.watchingTarget = e.remote;
+        // A relative "directory" in the config is resolved from the config's directory.
+        this.localRoot = path.resolve(path.dirname(this.configFile), e.local);
         this.status.set({ kind: 'watching', target: e.remote });
+        break;
+      case 'skipped':
+        void this.offerSkipped(e.path, e.limit);
         break;
       case 'error':
         this.lastError = e.message;
@@ -208,6 +219,38 @@ export class Session implements vscode.Disposable {
     const action = await vscode.window.showErrorMessage(text, ...buttons);
     if (action === 'Open settings') {
       await vscode.commands.executeCommand('workbench.action.openSettings', 'synchro.binaryPath');
+    } else if (action === 'Show log') {
+      void this.showLog();
+    }
+  }
+
+  /**
+   * Tells that a new directory was too big to sync and offers to exclude it
+   * from now on, or to upload it once.
+   * @param relative Directory path relative to the synced root, slash-separated.
+   * @param limit The config's `maxNewDirectoryFiles`.
+   */
+  private async offerSkipped(relative: string, limit: number): Promise<void> {
+    const action = await vscode.window.showWarningMessage(
+      `${this.name}: ${relative}/ appeared with more than ${limit} files and was not synced.`,
+      'Add to exclude',
+      'Upload anyway',
+      'Show log',
+    );
+    if (action === 'Add to exclude') {
+      try {
+        const text = withExclude(fs.readFileSync(this.configFile, 'utf8'), relative);
+        if (text !== undefined) {
+          fs.writeFileSync(this.configFile, text);
+        }
+        void vscode.window.showInformationMessage(`${this.name}: added "${relative}" to exclude.`);
+      } catch (err) {
+        void vscode.window.showErrorMessage(
+          `${this.name}: could not update ${path.basename(this.configFile)}: ${(err as Error).message}`,
+        );
+      }
+    } else if (action === 'Upload anyway' && this.localRoot) {
+      await vscode.commands.executeCommand('synchro.upload', vscode.Uri.file(path.join(this.localRoot, relative)));
     } else if (action === 'Show log') {
       void this.showLog();
     }

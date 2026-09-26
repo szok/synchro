@@ -21,6 +21,7 @@ export type SynchroEvent = Base &
     | { event: 'watching'; local: string; remote: string; exclude?: string[] | null }
     | { event: 'change'; change: string; path: string }
     | { event: 'upload' | 'delete' | 'mkdir' | 'rmdir'; path: string }
+    | { event: 'skipped'; path: string; limit: number }
     | { event: 'stopping'; reason: string }
     | { event: 'stopped' }
   );
@@ -119,6 +120,8 @@ export function eventEntry(e: SynchroEvent): Entry {
       return entry('+', 'blue', `${e.path}/`, 'mkdir');
     case 'rmdir':
       return entry('−', 'magenta', `${e.path}/`, 'rmdir');
+    case 'skipped':
+      return entry('⚠', 'yellow', `${e.path}/ has more than ${e.limit} files and was not synced`, 'skipped');
     case 'stopping':
       return entry('ℹ', 'cyan', `Stopping (${e.reason})...`);
     case 'stopped':

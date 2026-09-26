@@ -13,6 +13,9 @@ import (
 const (
 	DefaultFile        = ".synchro.json"
 	DefaultConcurrency = 8
+	// DefaultMaxNewDirectoryFiles is the file count above which a directory that
+	// appears while watching (e.g. node_modules from npm install) is skipped.
+	DefaultMaxNewDirectoryFiles = 1000
 	// PasswordEnv overrides the config file's "password" when set and non-empty.
 	PasswordEnv = "SYNCHRO_PASSWORD"
 )
@@ -29,6 +32,10 @@ type Config struct {
 	RemoteDirectory string   `json:"remoteDirectory"`
 	Exclude         []string `json:"exclude,omitempty"`
 	Concurrency     int      `json:"concurrency,omitempty"`
+	// UseGitignore also leaves out paths ignored by the .gitignore in Directory.
+	UseGitignore bool `json:"useGitignore,omitempty"`
+	// MaxNewDirectoryFiles: 0 means DefaultMaxNewDirectoryFiles, negative disables the limit.
+	MaxNewDirectoryFiles int `json:"maxNewDirectoryFiles,omitempty"`
 }
 
 // Example returns the configuration written by --init.
@@ -36,9 +43,11 @@ func Example() Config {
 	return Config{
 		Host: "192.168.1.1", Port: 22, Username: "synchro-user", Auth: "key",
 		PrivateKeyPath: "~/.ssh/id_rsa", Password: "", Directory: "./",
-		RemoteDirectory: "/home/synchro-user/your-app/",
-		Exclude:         []string{"node_modules", ".git", ".idea", "*.log", ".synchro.json"},
-		Concurrency:     DefaultConcurrency,
+		RemoteDirectory:      "/home/synchro-user/your-app/",
+		Exclude:              []string{"node_modules", ".git", ".idea", "*.log", ".synchro.json"},
+		Concurrency:          DefaultConcurrency,
+		UseGitignore:         true,
+		MaxNewDirectoryFiles: DefaultMaxNewDirectoryFiles,
 	}
 }
 
@@ -64,6 +73,9 @@ func Load(filename string) (Config, error) {
 	}
 	if cfg.Concurrency == 0 {
 		cfg.Concurrency = DefaultConcurrency
+	}
+	if cfg.MaxNewDirectoryFiles == 0 {
+		cfg.MaxNewDirectoryFiles = DefaultMaxNewDirectoryFiles
 	}
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err

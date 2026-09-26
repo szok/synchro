@@ -53,10 +53,16 @@ synchro --init                       # create .synchro.json
 synchro --test                       # verify the configured SSH/SFTP connection
 synchro --sync                       # watch and synchronize future changes
 synchro --syncAll                    # upload all files, then watch
+synchro --upload src/app.js          # upload one file or directory and exit (repeatable)
 synchro --config=path/to/config.json --sync
 synchro --json --sync                # machine-readable JSON events (one per line)
 synchro --help
 ```
+
+`--upload` uses a single connection without retrying and exits non-zero if any
+file failed. Paths must lie inside `directory` and must not be excluded;
+excluded files inside an uploaded directory are skipped, `maxNewDirectoryFiles`
+does not apply.
 
 `--init` never overwrites an existing `.synchro.json` and creates it with mode `0600`.
 
@@ -87,6 +93,7 @@ stdout (errors included). Every event has `time`, `level` (`info`, `success`,
 | `watching`                           | `local`, `remote`, `exclude`                                        |
 | `change`                             | `change` (`add`, `change`, `unlink`, `addDir`, `unlinkDir`), `path` |
 | `upload`, `delete`, `mkdir`, `rmdir` | `path` (relative to `directory`)                                    |
+| `skipped` (level `warn`)             | `path` (new directory not synced), `limit`                          |
 | `stopping`                           | `reason`                                                            |
 | `stopped`                            | —                                                                   |
 
@@ -107,22 +114,38 @@ stdout (errors included). Every event has `time`, `level` (`info`, `success`,
   "directory": "./",
   "remoteDirectory": "/home/synchro-user/your-app/",
   "exclude": ["node_modules", ".git", ".idea", "*.log", ".synchro.json"],
-  "concurrency": 8
+  "concurrency": 8,
+  "useGitignore": true,
+  "maxNewDirectoryFiles": 1000
 }
 ```
 
-| Field             | Description                                                                                       |
-| ----------------- | ------------------------------------------------------------------------------------------------- |
-| `host`            | Remote hostname or IP address.                                                                    |
-| `port`            | SSH port; defaults to `22`.                                                                       |
-| `username`        | SSH login username.                                                                               |
-| `auth`            | `key`, `password`, or `none`.                                                                     |
-| `privateKeyPath`  | Private-key path for `key` authentication. A leading `~/` is expanded.                            |
-| `password`        | Login password for `password`, or key passphrase for `key`.                                       |
-| `directory`       | Local directory to synchronize.                                                                   |
-| `remoteDirectory` | Remote destination directory.                                                                     |
-| `exclude`         | Excluded names or patterns with `*` wildcards.                                                    |
-| `concurrency`     | Maximum simultaneous uploads during `--syncAll`; defaults to `8`. Set `1` for sequential uploads. |
+| Field                  | Description                                                                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                 | Remote hostname or IP address.                                                                                                           |
+| `port`                 | SSH port; defaults to `22`.                                                                                                              |
+| `username`             | SSH login username.                                                                                                                      |
+| `auth`                 | `key`, `password`, or `none`.                                                                                                            |
+| `privateKeyPath`       | Private-key path for `key` authentication. A leading `~/` is expanded.                                                                   |
+| `password`             | Login password for `password`, or key passphrase for `key`.                                                                              |
+| `directory`            | Local directory to synchronize.                                                                                                          |
+| `remoteDirectory`      | Remote destination directory.                                                                                                            |
+| `exclude`              | Excluded names or patterns with `*` wildcards.                                                                                           |
+| `concurrency`          | Maximum simultaneous uploads during `--syncAll`; defaults to `8`. Set `1` for sequential uploads.                                        |
+| `useGitignore`         | Also leave out paths ignored by the `.gitignore` in `directory` (only that file, read at start). Off when missing; `--init` turns it on. |
+| `maxNewDirectoryFiles` | A directory that appears while watching and holds more files is skipped with a warning; defaults to `1000`, negative disables.           |
+
+### New directories and `npm install`
+
+A directory created while watching is not uploaded file by file as events
+arrive. Synchro waits until it goes a second without changes, then scans it and
+uploads what it contains, so files written before its watch was set up are not
+missed. If it holds more than `maxNewDirectoryFiles` files — typically
+`node_modules` after `npm install` without an exclude rule — it is skipped
+instead and a `skipped` warning names it: add it to `exclude` (or rely on
+`useGitignore`), or upload it once with `--upload <dir>`. The rest of the
+project keeps syncing meanwhile. Directories that already existed at start
+are not limited.
 
 > `.synchro.json` can contain credentials and is ignored by Git by default.
 
@@ -145,15 +168,16 @@ JSON events from its stdout and shows them in VS Code. User-facing docs live in
 ### Features
 
 - **Commands** (`Ctrl/Cmd+Shift+P`, category "Synchro"): Create config, Start
-  sync, Sync all and watch, Stop, Test connection, Set password, Clear password,
-  Show log.
+  sync, Sync all and watch, Stop, Upload current file, Test connection, Set
+  password, Clear password, Show log. "Upload to server" is also in the
+  context menu of Explorer items and editor tabs.
 - **Status bar item** showing stopped / connecting / full-sync progress
   (`12/40`) / syncing / reconnecting, plus an error count. Click it to start or
   stop.
 - **"Synchro" output channel** with readable logs. Notifications appear only for
   a lost connection, an incomplete full sync, or an unexpected exit (with a
   shortcut to settings when the binary is missing).
-- **Password in the OS keychain**: *Set password* stores it with VS Code's
+- **Password in the OS keychain**: _Set password_ stores it with VS Code's
   SecretStorage and passes it to the binary as `SYNCHRO_PASSWORD`, which
   overrides `password` from the config file.
 - **Graceful stop**: the extension closes the binary's stdin (works on Windows

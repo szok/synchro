@@ -22,6 +22,9 @@ func TestLoadDefaultsPort(t *testing.T) {
 	if cfg.Concurrency != DefaultConcurrency {
 		t.Fatalf("concurrency=%d; want %d", cfg.Concurrency, DefaultConcurrency)
 	}
+	if cfg.MaxNewDirectoryFiles != DefaultMaxNewDirectoryFiles || cfg.UseGitignore {
+		t.Fatalf("maxNewDirectoryFiles=%d useGitignore=%v; want %d, false", cfg.MaxNewDirectoryFiles, cfg.UseGitignore, DefaultMaxNewDirectoryFiles)
+	}
 }
 func TestLoadPasswordFromEnvOverridesFile(t *testing.T) {
 	file := filepath.Join(t.TempDir(), "config.json")

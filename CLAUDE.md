@@ -19,6 +19,7 @@ go vet ./...                        # Static checks
 ./synchro --syncAll                 # Full sync then watch
 ./synchro --sync                    # Watch and sync changes only
 ./synchro --test                    # Verify SSH/SFTP connectivity and exit
+./synchro --upload <path>           # Upload a file/dir once and exit (repeatable)
 ./synchro --config=<path>           # Use a custom config file
 ./synchro --json --sync             # JSON events on stdout (for the VS Code extension)
 ```
@@ -36,13 +37,17 @@ go vet ./...                        # Static checks
   are queued and flushed once SFTP opens. `Run` schedules an `Operation`.
 - **`internal/watcher`** — `fsnotify`-based recursive watcher. Maps events to
   `Operations`: create→upload/mkdir, write→upload, remove/rename→delete/rmdir.
-  Editor backup files (`*~`, `.#*`, `*.swp`, …) are ignored.
+  Editor backup files (`*~`, `.#*`, `*.swp`, …) are ignored. A directory created
+  while watching is held back until it settles (1s without events), then scanned
+  and uploaded — or skipped with a `skipped` event if over `maxNewDirectoryFiles`.
 - **`internal/syncer`** — `Upload`, `DeleteFile`, `CreateDir`, `DeleteDir`, and
-  `SyncAll` (bulk upload with bounded parallelism). `MkdirAll` ensures remote
-  parent dirs exist.
+  `SyncAll` (bulk upload with bounded parallelism). `ResolveTargets` +
+  `UploadFiles` back the one-shot `--upload` (over `sftpclient.Dial`).
+  `MkdirAll` ensures remote parent dirs exist.
 - **`internal/paths`** — `RemotePath` maps local→remote POSIX paths (and refuses
   to escape the remote root). `IsExcluded`/`MatchGlob` handle `*` glob patterns
-  with a compiled-regexp cache.
+  with a compiled-regexp cache. `Filter` combines them with the root
+  `.gitignore` (`Gitignore`, when `useGitignore`) and is shared by syncer and watcher.
 - **`internal/logx`** — timestamped colored terminal output and the ASCII logo;
   with `--json` every log call emits one JSON event per line on stdout instead.
 - **`vscode/`** — VS Code extension (TypeScript, esbuild). Spawns
@@ -67,7 +72,9 @@ go vet ./...                        # Static checks
   "directory": "/local/path",
   "remoteDirectory": "/remote/path",
   "exclude": ["node_modules", ".git", "*.log", ".synchro.json"],
-  "concurrency": 8
+  "concurrency": 8,
+  "useGitignore": true,
+  "maxNewDirectoryFiles": 1000
 }
 ```
 

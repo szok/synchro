@@ -15,6 +15,7 @@ import (
 
 	"github.com/szok/synchro/internal/config"
 	"github.com/szok/synchro/internal/logx"
+	"github.com/szok/synchro/internal/paths"
 	"github.com/szok/synchro/internal/sftpclient"
 	"github.com/szok/synchro/internal/syncer"
 	"github.com/szok/synchro/internal/version"
@@ -27,6 +28,7 @@ const shutdownTimeout = 15 * time.Second
 type options struct {
 	init, test, sync, syncAll, noLogo, help, quiet, version, json, stopOnStdinClose bool
 	config                                                                          string
+	upload                                                                          []string
 }
 
 func main() {
@@ -65,7 +67,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		log.Info("Edit the file above, then run: synchro --syncAll")
 		return 0
 	}
-	if !options.test && !options.sync && !options.syncAll {
+	if !options.test && !options.sync && !options.syncAll && len(options.upload) == 0 {
 		printHelp(out)
 		return 0
 	}
@@ -87,6 +89,14 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		log.Error(fmt.Sprintf("Local directory is not accessible: %s", cfg.Directory))
 		return 1
 	}
+	filter, err := loadFilter(cfg, log)
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	if len(options.upload) > 0 {
+		return uploadOnce(cfg, filter, options.upload, log)
+	}
 	var stdinClosed io.Reader
 	if options.stopOnStdinClose {
 		stdinClosed = stdin
@@ -106,7 +116,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		log.Stopped()
 		return 0
 	}
-	s, err := syncer.New(cfg, connection.Run, log)
+	s, err := syncer.New(cfg, filter, connection.Run, log)
 	if err != nil {
 		log.Error(err.Error())
 		return 1
@@ -116,7 +126,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 	}
 	if ctx.Err() == nil {
 		log.Watching(cfg.Directory, cfg.RemoteDirectory, cfg.Exclude)
-		if err := watcher.Watch(ctx, cfg.Directory, cfg.Exclude, s, log); err != nil {
+		if err := watcher.Watch(ctx, cfg.Directory, watcher.Options{Filter: filter, NewDirectoryLimit: cfg.MaxNewDirectoryFiles}, s, log); err != nil {
 			log.Error(fmt.Sprintf("Watcher failed: %v", err))
 			return 1
 		}
@@ -124,6 +134,75 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 	connection.Close()
 	closeConnection()
 	log.Stopped()
+	return 0
+}
+
+// loadFilter builds the exclusion filter: the config's patterns plus, with
+// useGitignore, the .gitignore in the synced directory.
+func loadFilter(cfg config.Config, log *logx.Logger) (*paths.Filter, error) {
+	root, err := cfg.LocalDirectory()
+	if err != nil {
+		return nil, err
+	}
+	var gitignore *paths.Gitignore
+	if cfg.UseGitignore {
+		file := filepath.Join(root, ".gitignore")
+		if gitignore, err = paths.LoadGitignore(file); err != nil {
+			return nil, fmt.Errorf("read %s: %w", file, err)
+		}
+		if gitignore != nil {
+			log.Info("Also excluding paths ignored by " + file)
+		}
+	}
+	return paths.NewFilter(root, cfg.Exclude, gitignore), nil
+}
+
+// uploadOnce uploads the given files and directories over a single connection
+// without retrying, then exits. It fails when any of them was not uploaded.
+func uploadOnce(cfg config.Config, filter *paths.Filter, targets []string, log *logx.Logger) int {
+	root, err := cfg.LocalDirectory()
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	files, err := syncer.ResolveTargets(root, filter, targets)
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	if len(files) == 0 {
+		log.Warn("Nothing to upload")
+		return 0
+	}
+	client, closeClient, err := sftpclient.Dial(cfg)
+	if err != nil {
+		log.Error(fmt.Sprintf("SSH connection failed: %v", err))
+		return 1
+	}
+	defer closeClient()
+	s, err := syncer.New(cfg, filter, func(operation sftpclient.Operation) {
+		if err := operation(client); err != nil {
+			log.Error(fmt.Sprintf("SFTP operation error: %v", err))
+		}
+	}, log)
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	ctx, stop := watchShutdown(log, nil)
+	defer stop()
+	uploaded := s.UploadFiles(ctx, files)
+	destination := fmt.Sprintf("%s@%s", cfg.Username, cfg.Host)
+	if uploaded < len(files) {
+		log.Error(fmt.Sprintf("Uploaded %d of %d files to %s", uploaded, len(files), destination))
+		return 1
+	}
+	if len(files) == 1 {
+		rel, _ := filepath.Rel(root, files[0])
+		log.Success(fmt.Sprintf("Uploaded %s to %s", filepath.ToSlash(rel), destination))
+	} else {
+		log.Success(fmt.Sprintf("Uploaded %d files to %s", len(files), destination))
+	}
 	return 0
 }
 
@@ -175,6 +254,10 @@ func parseFlags(args []string, errOut io.Writer) (options, error) {
 	fs.BoolVar(&o.test, "test", false, "Test the SSH/SFTP connection and exit")
 	fs.BoolVar(&o.sync, "sync", false, "Connect and watch for changes")
 	fs.BoolVar(&o.syncAll, "syncAll", false, "Full sync then watch for changes")
+	fs.Func("upload", "Upload a file or directory once and exit (repeatable)", func(path string) error {
+		o.upload = append(o.upload, path)
+		return nil
+	})
 	fs.StringVar(&o.config, "config", config.DefaultFile, "Use a custom config file")
 	fs.BoolVar(&o.noLogo, "no-logo", false, "Do not display logo")
 	fs.BoolVar(&o.noLogo, "hide-logo", false, "Do not display logo (alias for --no-logo)")
@@ -201,6 +284,7 @@ func printHelp(out io.Writer) {
   --test           Test the SSH/SFTP connection and exit
   --sync           Connect and watch for changes, uploading them as they happen
   --syncAll        Do a full upload of all files first, then watch for changes
+  --upload <path>  Upload a file or directory once and exit (repeatable)
   --config <path>  Use a custom config file instead of .synchro.json
   --no-logo        Do not display the SYNCHRO ASCII art logo
   --quiet, -q      Suppress per-file upload/delete/mkdir/rmdir logs

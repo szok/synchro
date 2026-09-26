@@ -5,6 +5,17 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-09-26
+
+### Added
+
+- "Synchro: Upload current file" command and "Upload to server" in the Explorer and editor tab context menus (works on several files and folders)
+- When a new directory is too big to sync (e.g. `node_modules` after `npm install`), a warning offers **Add to exclude** (writes it to the config) or **Upload anyway**
+
+### Changed
+
+- Bundles synchro 1.4.0: new directories are uploaded once they settle and skipped above `maxNewDirectoryFiles`; optional `useGitignore`
+
 ## [1.0.0] - 2026-09-25
 
 First stable release, published on the Visual Studio Marketplace.

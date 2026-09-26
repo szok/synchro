@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"sync"
 	"testing"
+
+	"github.com/szok/synchro/internal/paths"
 )
 
 type statResult struct {
@@ -162,7 +164,7 @@ func TestCollectFilesFiltersExcludedDirectoriesAndFiles(t *testing.T) {
 	must("index.go")
 	must("node_modules/pkg/index.js")
 	must("server.log")
-	files, err := CollectFiles(root, []string{"node_modules", "*.log"})
+	files, err := CollectFiles(root, paths.NewFilter(root, []string{"node_modules", "*.log"}, nil))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,5 +192,50 @@ func TestParallelUploadStopsDispatchingWhenCancelled(t *testing.T) {
 	}
 	if uploaded != len(calls) {
 		t.Fatalf("uploaded=%d; want %d", uploaded, len(calls))
+	}
+}
+
+func TestResolveTargetsExpandsFilesAndDirectories(t *testing.T) {
+	root := t.TempDir()
+	for _, name := range []string{"a.txt", "dir/b.txt", "dir/c.log", "dir/sub/d.txt"} {
+		path := filepath.Join(root, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	targets := []string{filepath.Join(root, "a.txt"), filepath.Join(root, "dir"), filepath.Join(root, "dir", "b.txt")}
+	files, err := ResolveTargets(root, paths.NewFilter(root, []string{"*.log"}, nil), targets)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		filepath.Join(root, "a.txt"),
+		filepath.Join(root, "dir", "b.txt"),
+		filepath.Join(root, "dir", "sub", "d.txt"),
+	}
+	if !reflect.DeepEqual(files, want) {
+		t.Fatalf("files = %v, want %v", files, want)
+	}
+}
+
+func TestResolveTargetsRejectsInvalidTargets(t *testing.T) {
+	root := t.TempDir()
+	outside := t.TempDir()
+	for _, path := range []string{filepath.Join(root, "app.log"), filepath.Join(outside, "x.txt")} {
+		if err := os.WriteFile(path, nil, 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for name, target := range map[string]string{
+		"outside":  filepath.Join(outside, "x.txt"),
+		"excluded": filepath.Join(root, "app.log"),
+		"missing":  filepath.Join(root, "missing.txt"),
+	} {
+		if _, err := ResolveTargets(root, paths.NewFilter(root, []string{"*.log"}, nil), []string{target}); err == nil {
+			t.Errorf("%s: expected an error for %s", name, target)
+		}
 	}
 }

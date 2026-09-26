@@ -23,9 +23,19 @@ background (it is bundled with the extension) and shows its status in VS Code.
 | Synchro: Start sync                    | Watches the folder and uploads changes as they happen          |
 | Synchro: Sync all and watch            | Uploads every file first, then watches                         |
 | Synchro: Stop                          | Stops after in-flight uploads finish                           |
+| Synchro: Upload current file           | Uploads the active editor's file once (saves it first)         |
 | Synchro: Test connection               | Checks SSH/SFTP login with the current config                  |
 | Synchro: Set password / Clear password | Manages the password in the OS keychain                        |
 | Synchro: Show log                      | Opens the "Synchro" tab in the bottom panel (also in Output)   |
+
+To upload files without watching, right-click them (or a folder, or several
+selected items) in the Explorer, or an editor tab, and choose **Upload to
+server**. Uploads run over their own short-lived connection, so they work
+whether or not sync is running.
+
+If a directory appears while syncing with more than `maxNewDirectoryFiles`
+files (1000 by default) — typically `node_modules` after `npm install` — it is
+not synced; a warning offers **Add to exclude** or **Upload anyway**.
 
 The status bar item shows the state (stopped, connecting, full-sync progress,
 syncing, reconnecting) and the number of errors; click it to start or stop.

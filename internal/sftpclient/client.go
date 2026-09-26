@@ -17,9 +17,9 @@ import (
 )
 
 const (
-	reconnectDelay      = 3 * time.Second
-	keepaliveInterval   = 30 * time.Second
-	testConnectionLimit = 10 * time.Second
+	reconnectDelay    = 3 * time.Second
+	keepaliveInterval = 30 * time.Second
+	dialLimit         = 10 * time.Second
 )
 
 var (
@@ -200,36 +200,51 @@ func (c *Client) Close() {
 
 // TestConnection opens and closes one SSH/SFTP connection without retrying.
 func TestConnection(cfg config.Config) error {
+	_, closeClient, err := Dial(cfg)
+	if err != nil {
+		return err
+	}
+	closeClient()
+	return nil
+}
+
+// Dial opens one SSH/SFTP connection without retrying; the handshake must
+// finish within dialLimit. The returned function closes the connection.
+func Dial(cfg config.Config) (*sftp.Client, func(), error) {
 	sshConfig, err := BuildSSHConfig(cfg)
 	if err != nil {
-		return fmt.Errorf("build SSH configuration: %w", err)
+		return nil, nil, fmt.Errorf("build SSH configuration: %w", err)
 	}
 	address := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
-	conn, err := net.DialTimeout("tcp", address, testConnectionLimit)
+	conn, err := net.DialTimeout("tcp", address, dialLimit)
 	if err != nil {
-		return fmt.Errorf("dial %s: %w", address, err)
+		return nil, nil, fmt.Errorf("dial %s: %w", address, err)
 	}
-	defer conn.Close()
-	if err := conn.SetDeadline(time.Now().Add(testConnectionLimit)); err != nil {
-		return fmt.Errorf("set connection deadline: %w", err)
+	if err := conn.SetDeadline(time.Now().Add(dialLimit)); err != nil {
+		conn.Close()
+		return nil, nil, fmt.Errorf("set connection deadline: %w", err)
 	}
 
 	connection, channels, requests, err := ssh.NewClientConn(conn, address, sshConfig)
 	if err != nil {
-		return fmt.Errorf("authenticate with %s: %w", address, err)
+		conn.Close()
+		return nil, nil, fmt.Errorf("authenticate with %s: %w", address, err)
 	}
 	sshClient := ssh.NewClient(connection, channels, requests)
-	defer sshClient.Close()
 	if err := conn.SetDeadline(time.Time{}); err != nil {
-		return fmt.Errorf("clear connection deadline: %w", err)
+		sshClient.Close()
+		return nil, nil, fmt.Errorf("clear connection deadline: %w", err)
 	}
 
 	sftpClient, err := sftp.NewClient(sshClient)
 	if err != nil {
-		return fmt.Errorf("start SFTP session: %w", err)
+		sshClient.Close()
+		return nil, nil, fmt.Errorf("start SFTP session: %w", err)
 	}
-	defer sftpClient.Close()
-	return nil
+	return sftpClient, func() {
+		sftpClient.Close()
+		sshClient.Close()
+	}, nil
 }
 
 func wait(ctx context.Context, delay time.Duration) bool {

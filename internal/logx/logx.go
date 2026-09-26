@@ -135,6 +135,17 @@ func (l *Logger) Watching(local, remote string, exclude []string) {
 	}
 	l.Info("Press Ctrl+C to stop")
 }
+
+// Skipped reports a directory created while watching that was not synced
+// because it holds more than limit files. It is shown even in quiet mode.
+func (l *Logger) Skipped(path string, limit int) {
+	if l.JSON {
+		l.emit("warn", "skipped", map[string]any{"path": path, "limit": limit})
+		return
+	}
+	l.line(l.Err, "⚠", yellow, "[skipped]", fmt.Sprintf("%s/ has more than %d files and was not synced. Add it to \"exclude\", or upload it once with --upload %s", path, limit, path))
+}
+
 func (l *Logger) SyncAllStart(total, workers int) {
 	if l.JSON {
 		l.emit("info", "syncAllStart", map[string]any{"total": total, "workers": workers})

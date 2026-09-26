@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -64,6 +64,16 @@
         "category": "Synchro"
       },
       {
+        "command": "synchro.uploadCurrentFile",
+        "title": "Upload current file",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.upload",
+        "title": "Upload to server",
+        "category": "Synchro"
+      },
+      {
         "command": "synchro.toggle",
         "title": "Toggle sync",
         "category": "Synchro"
@@ -118,6 +128,10 @@
         {
           "command": "synchro.toggle",
           "when": "false"
+        },
+        {
+          "command": "synchro.upload",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -125,6 +139,27 @@
           "command": "synchro.clearLog",
           "when": "view == synchro.log",
           "group": "navigation"
+        }
+      ],
+      "explorer/context": [
+        {
+          "command": "synchro.upload",
+          "when": "synchro.hasConfig && resourceScheme == file",
+          "group": "synchro@1"
+        }
+      ],
+      "editor/title/context": [
+        {
+          "command": "synchro.upload",
+          "when": "synchro.hasConfig && resourceScheme == file",
+          "group": "synchro@1"
+        }
+      ],
+      "editor/context": [
+        {
+          "command": "synchro.uploadCurrentFile",
+          "when": "synchro.hasConfig && resourceScheme == file",
+          "group": "synchro@1"
         }
       ]
     },

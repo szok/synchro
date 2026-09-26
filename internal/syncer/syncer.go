@@ -36,14 +36,16 @@ type Syncer struct {
 	run       func(sftpclient.Operation)
 	log       Logger
 	localRoot string
+	filter    *paths.Filter
 }
 
-func New(cfg config.Config, run func(sftpclient.Operation), log Logger) (*Syncer, error) {
+// New creates a Syncer; filter decides which files SyncAll leaves out.
+func New(cfg config.Config, filter *paths.Filter, run func(sftpclient.Operation), log Logger) (*Syncer, error) {
 	root, err := cfg.LocalDirectory()
 	if err != nil {
 		return nil, err
 	}
-	return &Syncer{cfg: cfg, run: run, log: log, localRoot: root}, nil
+	return &Syncer{cfg: cfg, run: run, log: log, localRoot: root, filter: filter}, nil
 }
 
 func (s *Syncer) remote(local string) string {
@@ -120,22 +122,74 @@ func (s *Syncer) DeleteDir(local string) {
 // SyncAll uploads every included regular file with bounded parallelism.
 // Cancelling ctx stops scheduling new uploads; uploads already running finish.
 func (s *Syncer) SyncAll(ctx context.Context) {
-	files, err := CollectFiles(s.localRoot, s.cfg.Exclude)
+	files, err := CollectFiles(s.localRoot, s.filter)
 	if err != nil {
 		s.log.Error(fmt.Sprintf("Read local directory: %v", err))
 		return
 	}
-	workers := s.cfg.Concurrency
-	if workers == 0 {
-		workers = config.DefaultConcurrency
-	}
-	if workers > len(files) {
-		workers = len(files)
-	}
+	workers := s.workers(len(files))
 	s.log.SyncAllStart(len(files), workers)
 
 	uploaded := parallelUpload(ctx, files, workers, s.Upload)
 	s.log.SyncAllDone(uploaded, len(files))
+}
+
+// UploadFiles uploads files with the configured parallelism and returns how
+// many succeeded. Cancelling ctx stops scheduling new uploads.
+func (s *Syncer) UploadFiles(ctx context.Context, files []string) int {
+	return parallelUpload(ctx, files, s.workers(len(files)), s.Upload)
+}
+
+// workers returns the configured upload parallelism, capped at files.
+func (s *Syncer) workers(files int) int {
+	workers := s.cfg.Concurrency
+	if workers == 0 {
+		workers = config.DefaultConcurrency
+	}
+	return min(workers, files)
+}
+
+// ResolveTargets expands the files and directories named on the command line
+// into the regular files to upload, without duplicates. Every target must lie
+// inside root and must not be excluded; excluded entries inside a target
+// directory are skipped, as in a full sync.
+func ResolveTargets(root string, filter *paths.Filter, targets []string) ([]string, error) {
+	var files []string
+	seen := map[string]bool{}
+	for _, target := range targets {
+		absolute, err := filepath.Abs(target)
+		if err != nil {
+			return nil, err
+		}
+		rel, err := filepath.Rel(root, absolute)
+		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+			return nil, fmt.Errorf("%s is outside the synced directory %s", target, root)
+		}
+		info, err := os.Stat(absolute)
+		if err != nil {
+			return nil, err
+		}
+		var found []string
+		switch {
+		case rel != "." && filter.Excluded(absolute, info.IsDir()):
+			return nil, fmt.Errorf("%s is excluded from syncing (\"exclude\" or .gitignore)", target)
+		case info.IsDir():
+			if found, err = CollectFiles(absolute, filter); err != nil {
+				return nil, err
+			}
+		case info.Mode().IsRegular():
+			found = []string{absolute}
+		default:
+			return nil, fmt.Errorf("%s is not a regular file or directory", target)
+		}
+		for _, file := range found {
+			if !seen[file] {
+				seen[file] = true
+				files = append(files, file)
+			}
+		}
+	}
+	return files, nil
 }
 
 // parallelUpload runs upload for each file with bounded parallelism and
@@ -173,7 +227,7 @@ dispatch:
 }
 
 // CollectFiles recursively returns regular files that are not excluded.
-func CollectFiles(root string, exclude []string) ([]string, error) {
+func CollectFiles(root string, filter *paths.Filter) ([]string, error) {
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -182,7 +236,7 @@ func CollectFiles(root string, exclude []string) ([]string, error) {
 		if path == root {
 			return nil
 		}
-		if paths.IsExcluded(path, exclude) {
+		if filter.Excluded(path, entry.IsDir()) {
 			if entry.IsDir() {
 				return filepath.SkipDir
 			}

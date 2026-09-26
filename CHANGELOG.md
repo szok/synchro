@@ -5,6 +5,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-09-26
+
+### Added
+
+- `--upload <path>` flag (repeatable): uploads files or directories once over a single connection and exits; non-zero exit when any upload fails
+- `maxNewDirectoryFiles` config field (default `1000`, negative disables): a directory that appears while watching with more files than that — e.g. `node_modules` from `npm install` without an exclude rule — is skipped with a `skipped` warning event instead of clogging the upload queue
+- `useGitignore` config field: also leave out paths ignored by the `.gitignore` in the synced directory; `--init` writes it as `true`, existing configs without it are unchanged
+
+### Fixed
+
+- Files written into a new directory before its watch was set up (e.g. extracted archives, `git checkout`, `cp -r`) were never uploaded; a new directory is now scanned once it settles (1s without changes)
+
 ## [1.3.3] - 2026-09-25
 
 ### Added

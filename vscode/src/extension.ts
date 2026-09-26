@@ -29,6 +29,13 @@ export function activate(context: vscode.ExtensionContext): void {
     command('synchro.start', () => c.start('--sync')),
     command('synchro.syncAll', () => c.start('--syncAll')),
     command('synchro.stop', () => c.stop()),
+    command('synchro.uploadCurrentFile', () => c.upload()),
+    // Explorer passes the clicked item and the whole selection; editor tabs only the clicked file.
+    vscode.commands.registerCommand('synchro.upload', (uri?: vscode.Uri, selected?: unknown) =>
+      c.upload(
+        Array.isArray(selected) && selected.length > 0 ? selected : uri instanceof vscode.Uri ? [uri] : undefined,
+      ),
+    ),
     vscode.commands.registerCommand('synchro.toggle', (configFile?: string) => c.toggle(configFile)),
     command('synchro.testConnection', () => c.testConnection()),
     command('synchro.setPassword', () => c.setPassword()),
@@ -161,6 +168,76 @@ class Controller implements vscode.Disposable {
       return anyRunning ? this.stop() : this.start('--sync');
     }
     return this.sessions.get(configFile)?.running ? this.stop(configFile) : this.start('--sync', configFile);
+  }
+
+  /**
+   * Uploads files or folders once with `synchro --upload`, one run per config,
+   * saving their unsaved editors first.
+   * @param uris Files or folders to upload; defaults to the active editor's file.
+   */
+  async upload(uris?: vscode.Uri[]): Promise<void> {
+    if (!uris) {
+      const document = vscode.window.activeTextEditor?.document;
+      if (!document || document.uri.scheme !== 'file') {
+        void vscode.window.showWarningMessage('Open a file saved in the workspace to upload it.');
+        return;
+      }
+      uris = [document.uri];
+    }
+    const targets = uris.map((uri) => uri.fsPath);
+    const unsaved = vscode.workspace.textDocuments.filter(
+      (d) => d.isDirty && d.uri.scheme === 'file' && targets.some((target) => isInside(d.uri.fsPath, target)),
+    );
+    for (const document of unsaved) {
+      if (!(await document.save())) {
+        void vscode.window.showWarningMessage(`${path.basename(document.uri.fsPath)} could not be saved.`);
+        return;
+      }
+    }
+    this.syncSessions();
+    const byConfig = new Map<string, string[]>();
+    for (const uri of uris) {
+      const folder = vscode.workspace.getWorkspaceFolder(uri);
+      const configFile = folder && configPath(folder);
+      if (!configFile || !fs.existsSync(configFile)) {
+        void vscode.window.showWarningMessage(
+          `${path.basename(uri.fsPath)} is not in a workspace folder with a Synchro config.`,
+        );
+        return;
+      }
+      byConfig.set(configFile, [...(byConfig.get(configFile) ?? []), uri.fsPath]);
+    }
+    await Promise.all([...byConfig].map(([configFile, files]) => this.uploadWith(configFile, files)));
+  }
+
+  /**
+   * Runs `synchro --upload` for paths of one config and reports the outcome:
+   * a status bar message on success, an error notification on failure.
+   */
+  private async uploadWith(configFile: string, files: string[]): Promise<void> {
+    const session = this.sessions.get(configFile);
+    const name = session?.name ?? 'Synchro';
+    const log = (line: string | Entry) => (session ? session.log(line) : this.log(line));
+    const args = files.map((file) => `--upload=${file}`);
+    if (vscode.workspace.getConfiguration('synchro').get<boolean>('quiet', false)) {
+      args.push('--quiet');
+    }
+    const launch = await this.launch(configFile, args);
+    const what = files.length === 1 ? path.basename(files[0]) : `${files.length} items`;
+    const result = await vscode.window.withProgress(
+      { location: vscode.ProgressLocation.Window, title: `${name}: uploading ${what}…` },
+      () =>
+        runOnce(launch, {
+          event: (e) => log(eventEntry(e)),
+          text: (line) => log(line),
+        }),
+    );
+    const success = result.events.find((e) => e.event === 'success' || e.event === 'warn');
+    if (result.code === 0 && success && (success.event === 'success' || success.event === 'warn')) {
+      vscode.window.setStatusBarMessage(`$(cloud-upload) ${name}: ${success.message}`, 5000);
+      return;
+    }
+    await this.reportFailure('Upload failed', result.events, session);
   }
 
   /**
@@ -377,6 +454,7 @@ class Controller implements vscode.Disposable {
    */
   private syncSessions(): void {
     const configured = new Map(foldersWithConfig().map((folder) => [configPath(folder), folder]));
+    void vscode.commands.executeCommand('setContext', 'synchro.hasConfig', configured.size > 0);
     for (const [configFile, session] of this.sessions) {
       if (!configured.has(configFile) && !session.running) {
         session.dispose();
@@ -426,6 +504,12 @@ class Controller implements vscode.Disposable {
 function configPath(folder: vscode.WorkspaceFolder): string {
   const relative = vscode.workspace.getConfiguration('synchro', folder.uri).get<string>('configPath', DEFAULT_CONFIG);
   return path.resolve(folder.uri.fsPath, relative || DEFAULT_CONFIG);
+}
+
+/** Whether `file` is `target` or lies inside the directory `target`. */
+function isInside(file: string, target: string): boolean {
+  const relative = path.relative(target, file);
+  return relative === '' || (relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative));
 }
 
 /** Workspace folders whose config file exists. */
