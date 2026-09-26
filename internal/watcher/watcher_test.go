@@ -28,11 +28,19 @@ func (f *fakeOperations) add(list *[]string, p string) {
 	*list = append(*list, p)
 }
 
-// sortedUploads returns a sorted copy of the uploads so far.
+// sortedUploads returns the distinct uploads so far, sorted. A new file may be
+// uploaded twice: Linux reports it as Create and then Write.
 func (f *fakeOperations) sortedUploads() []string {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	uploads := append([]string(nil), f.uploads...)
+	var uploads []string
+	seen := map[string]bool{}
+	for _, upload := range f.uploads {
+		if !seen[upload] {
+			seen[upload] = true
+			uploads = append(uploads, upload)
+		}
+	}
 	sort.Strings(uploads)
 	return uploads
 }
@@ -196,9 +204,15 @@ func TestWatchUploadsEverythingInANewDirectory(t *testing.T) {
 		filepath.Join(root, "pkg", "lib", "deep", "c.js"),
 	}
 	eventually(t, "new directory was not uploaded", func() bool { return len(op.sortedUploads()) >= len(want) })
-	time.Sleep(200 * time.Millisecond) // no duplicate uploads afterwards
+	time.Sleep(200 * time.Millisecond)
 	if got := op.sortedUploads(); !equal(got, want) {
 		t.Fatalf("uploads = %v, want %v", got, want)
+	}
+	// Events inside a new directory are held back, so each file goes exactly once.
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	if len(op.uploads) != len(want) {
+		t.Fatalf("uploads = %v, want each file once", op.uploads)
 	}
 }
 
