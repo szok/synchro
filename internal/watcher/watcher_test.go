@@ -2,6 +2,7 @@ package watcher
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -254,7 +255,7 @@ func TestWatchLeavesOutGitignoredDirectories(t *testing.T) {
 		t.Fatal(err)
 	}
 	filter := paths.NewFilter(root, nil, paths.ParseGitignore("node_modules/\n"))
-	w := newWatch(nil, root, Options{Filter: filter}, &fakeOperations{}, &fakeLogger{})
+	w := newWatch(nil, root, Options{Filter: filter, NewDirectoryLimit: -1}, &fakeOperations{}, &fakeLogger{})
 	writeFiles(t, root, "node_modules/a.js", "src/b.js")
 	dirs, files, err := w.scan(root)
 	if err != nil {
@@ -275,4 +276,17 @@ func equal(a, b []string) bool {
 		}
 	}
 	return true
+}
+
+func TestScanStopsOncePastTheLimit(t *testing.T) {
+	root, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	w := newWatch(nil, root, Options{Filter: paths.NewFilter(root, nil, nil), NewDirectoryLimit: 2}, &fakeOperations{}, &fakeLogger{})
+	writeFiles(t, root, "a", "b", "c", "d", "e")
+	_, files, err := w.scan(root)
+	if !errors.Is(err, errTooManyFiles) || len(files) != 3 {
+		t.Fatalf("err = %v, %d files; want errTooManyFiles after 3", err, len(files))
+	}
 }

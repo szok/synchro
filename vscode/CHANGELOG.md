@@ -5,6 +5,13 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.1] - 2026-09-27
+
+### Changed
+
+- The log panel's watch line lists `.gitignore` among the exclusions when `useGitignore` is on
+- Bundles synchro 1.4.1: a large directory moved in whole is skipped without walking all of it
+
 ## [1.1.0] - 2026-09-26
 
 ### Added

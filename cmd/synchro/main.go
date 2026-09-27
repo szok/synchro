@@ -125,7 +125,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		s.SyncAll(ctx)
 	}
 	if ctx.Err() == nil {
-		log.Watching(cfg.Directory, cfg.RemoteDirectory, cfg.Exclude)
+		log.Watching(cfg.Directory, cfg.RemoteDirectory, cfg.Exclude, filter.UsesGitignore())
 		if err := watcher.Watch(ctx, cfg.Directory, watcher.Options{Filter: filter, NewDirectoryLimit: cfg.MaxNewDirectoryFiles}, s, log); err != nil {
 			log.Error(fmt.Sprintf("Watcher failed: %v", err))
 			return 1
@@ -149,9 +149,6 @@ func loadFilter(cfg config.Config, log *logx.Logger) (*paths.Filter, error) {
 		file := filepath.Join(root, ".gitignore")
 		if gitignore, err = paths.LoadGitignore(file); err != nil {
 			return nil, fmt.Errorf("read %s: %w", file, err)
-		}
-		if gitignore != nil {
-			log.Info("Also excluding paths ignored by " + file)
 		}
 	}
 	return paths.NewFilter(root, cfg.Exclude, gitignore), nil

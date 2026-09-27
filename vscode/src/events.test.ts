@@ -30,6 +30,19 @@ test('formatEvent survives a missing exclude list', () => {
   assert.equal(line, '--:--:-- ◉  [watch] . → /r');
 });
 
+test('formatEvent lists .gitignore among the exclusions', () => {
+  const line = formatEvent({
+    event: 'watching',
+    level: 'info',
+    local: '.',
+    remote: '/r',
+    exclude: ['*.log'],
+    gitignore: true,
+    time: 'x',
+  });
+  assert.equal(line, '--:--:-- ◉  [watch] . → /r  (excluded: *.log, .gitignore)');
+});
+
 test('eventEntry colours events like the CLI', () => {
   const entry = eventEntry({ event: 'delete', level: 'info', path: 'a.go', time: 'x' });
   assert.deepEqual(entry, { time: '--:--:--', level: 'info', icon: '✕', color: 'red', tag: '[delete]', text: 'a.go' });

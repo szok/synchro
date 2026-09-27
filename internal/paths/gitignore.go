@@ -161,6 +161,9 @@ func NewFilter(root string, exclude []string, gitignore *Gitignore) *Filter {
 	return &Filter{root: root, exclude: exclude, gitignore: gitignore}
 }
 
+// UsesGitignore reports whether a .gitignore takes part in the filter.
+func (f *Filter) UsesGitignore() bool { return f.gitignore != nil }
+
 // Excluded reports whether path (absolute) is left out of syncing.
 func (f *Filter) Excluded(path string, isDir bool) bool {
 	if IsExcluded(path, f.exclude) {

@@ -188,15 +188,15 @@ func (w *watch) settle(now time.Time) {
 		}
 		delete(w.fresh, top)
 		dirs, files, err := w.scan(top)
+		if errors.Is(err, errTooManyFiles) {
+			w.skip(top)
+			continue
+		}
 		if err != nil {
 			if !errors.Is(err, fs.ErrNotExist) {
 				w.log.Error(fmt.Sprintf("Read directory %s: %v", relative(w.root, top), err))
 			}
 			w.unwatch(top)
-			continue
-		}
-		if w.options.NewDirectoryLimit >= 0 && len(files) > w.options.NewDirectoryLimit {
-			w.skip(top)
 			continue
 		}
 		for _, dir := range dirs {
@@ -210,8 +210,12 @@ func (w *watch) settle(now time.Time) {
 	}
 }
 
+// errTooManyFiles stops a scan as soon as it passes the new directory limit,
+// so a huge tree moved in whole is not walked to the end.
+var errTooManyFiles = errors.New("too many files")
+
 // scan lists the directories (top first) and regular files under top that are
-// not excluded.
+// not excluded. It fails with errTooManyFiles once they exceed the limit.
 func (w *watch) scan(top string) (dirs, files []string, err error) {
 	err = filepath.WalkDir(top, func(path string, entry fs.DirEntry, err error) error {
 		if err != nil {
@@ -227,6 +231,9 @@ func (w *watch) scan(top string) (dirs, files []string, err error) {
 			dirs = append(dirs, path)
 		} else if entry.Type().IsRegular() {
 			files = append(files, path)
+			if w.options.NewDirectoryLimit >= 0 && len(files) > w.options.NewDirectoryLimit {
+				return errTooManyFiles
+			}
 		}
 		return nil
 	})

@@ -123,15 +123,23 @@ func (l *Logger) Disconnected(retry time.Duration) {
 }
 
 // Watching reports the directories being synchronized; watching starts right after.
-func (l *Logger) Watching(local, remote string, exclude []string) {
+// gitignore tells whether the root .gitignore also excludes paths.
+func (l *Logger) Watching(local, remote string, exclude []string, gitignore bool) {
 	if l.JSON {
-		l.emit("info", "watching", map[string]any{"local": local, "remote": remote, "exclude": exclude})
+		l.emit("info", "watching", map[string]any{"local": local, "remote": remote, "exclude": exclude, "gitignore": gitignore})
 		return
 	}
 	l.line(l.Out, "◉", cyan, "[watch]", "Local:    "+local)
 	l.line(l.Out, "◉", cyan, "[watch]", "Remote:   "+remote)
+	var excluded []string
 	if len(exclude) > 0 {
-		l.Info("Excluded: " + fmt.Sprint(exclude))
+		excluded = append(excluded, fmt.Sprint(exclude))
+	}
+	if gitignore {
+		excluded = append(excluded, ".gitignore")
+	}
+	if len(excluded) > 0 {
+		l.Info("Excluded: " + strings.Join(excluded, " + "))
 	}
 	l.Info("Press Ctrl+C to stop")
 }

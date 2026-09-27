@@ -18,7 +18,7 @@ export type SynchroEvent = Base &
     | { event: 'disconnected'; retryInSeconds: number }
     | { event: 'syncAllStart'; total: number; workers: number }
     | { event: 'syncAllDone'; uploaded: number; total: number }
-    | { event: 'watching'; local: string; remote: string; exclude?: string[] | null }
+    | { event: 'watching'; local: string; remote: string; exclude?: string[] | null; gitignore?: boolean }
     | { event: 'change'; change: string; path: string }
     | { event: 'upload' | 'delete' | 'mkdir' | 'rmdir'; path: string }
     | { event: 'skipped'; path: string; limit: number }
@@ -107,7 +107,8 @@ export function eventEntry(e: SynchroEvent): Entry {
     case 'syncAllDone':
       return entry('⟳', 'magenta', `Full sync complete: ${e.uploaded}/${e.total} files uploaded.`, 'syncAll');
     case 'watching': {
-      const exclude = e.exclude?.length ? `  (excluded: ${e.exclude.join(', ')})` : '';
+      const excluded = [...(e.exclude ?? []), ...(e.gitignore ? ['.gitignore'] : [])];
+      const exclude = excluded.length ? `  (excluded: ${excluded.join(', ')})` : '';
       return entry('◉', 'cyan', `${e.local} → ${e.remote}${exclude}`, 'watch');
     }
     case 'change':

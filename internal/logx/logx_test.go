@@ -72,3 +72,17 @@ func TestTextModeHasNoJSON(t *testing.T) {
 		t.Fatalf("output=%q; want terminal line", out.String())
 	}
 }
+
+func TestWatchingListsGitignoreAmongExclusions(t *testing.T) {
+	var out bytes.Buffer
+	New(&out, &out, false, false).Watching("/l", "/r", []string{"*.log"}, true)
+	if !strings.Contains(out.String(), "Excluded: [*.log] + .gitignore") {
+		t.Fatalf("output=%q; want exclusions with .gitignore", out.String())
+	}
+
+	out.Reset()
+	New(&out, &out, false, true).Watching("/l", "/r", nil, true)
+	if events := decodeLines(t, out.String()); events[0]["gitignore"] != true {
+		t.Fatalf("events=%v; want gitignore=true", events)
+	}
+}
