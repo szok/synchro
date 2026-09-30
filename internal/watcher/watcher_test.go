@@ -17,12 +17,14 @@ import (
 type fakeOperations struct {
 	mu                               sync.Mutex
 	uploads, deletes, mkdirs, rmdirs []string
+	// order holds every removal, files and directories, as it was requested.
+	order []string
 }
 
 func (f *fakeOperations) Upload(p string) bool { f.add(&f.uploads, p); return true }
-func (f *fakeOperations) DeleteFile(p string)  { f.add(&f.deletes, p) }
+func (f *fakeOperations) DeleteFile(p string)  { f.add(&f.deletes, p); f.add(&f.order, p) }
 func (f *fakeOperations) CreateDir(p string)   { f.add(&f.mkdirs, p) }
-func (f *fakeOperations) DeleteDir(p string)   { f.add(&f.rmdirs, p) }
+func (f *fakeOperations) DeleteDir(p string)   { f.add(&f.rmdirs, p); f.add(&f.order, p) }
 func (f *fakeOperations) add(list *[]string, p string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -102,7 +104,9 @@ func TestHandleMapsWriteToUpload(t *testing.T) {
 }
 func TestHandleMapsRemoveToDelete(t *testing.T) {
 	op := &fakeOperations{}
-	testWatch(t, "/project", op).handle(fsnotify.Event{Name: "/project/old.go", Op: fsnotify.Remove})
+	w := testWatch(t, "/project", op)
+	w.handle(fsnotify.Event{Name: "/project/old.go", Op: fsnotify.Remove})
+	w.flushRemovals()
 	if len(op.deletes) != 1 || op.deletes[0] != "/project/old.go" {
 		t.Fatalf("deletes=%v", op.deletes)
 	}
@@ -123,8 +127,74 @@ func TestHandleMapsRemovedWatchedDirectoryToRemoveDirectory(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.handle(fsnotify.Event{Name: child, Op: fsnotify.Remove})
-	if len(op.rmdirs) != 1 || op.rmdirs[0] != child {
-		t.Fatalf("rmdirs=%v", op.rmdirs)
+	// Reported twice, as kqueue does for a directory that was watched again.
+	w.handle(fsnotify.Event{Name: child, Op: fsnotify.Remove})
+	w.flushRemovals()
+	if len(op.rmdirs) != 1 || op.rmdirs[0] != child || len(op.deletes) != 0 {
+		t.Fatalf("rmdirs=%v deletes=%v", op.rmdirs, op.deletes)
+	}
+}
+
+func TestFlushRemovalsSendsContentsBeforeTheirDirectory(t *testing.T) {
+	op := &fakeOperations{}
+	w := testWatch(t, "/project", op)
+	w.watched["/project/coverage"] = struct{}{}
+	w.watched["/project/coverage/report"] = struct{}{}
+	// The order kqueue reports a removed tree in: directories before their files.
+	for _, name := range []string{"/project/coverage/report", "/project/coverage", "/project/coverage/report/index.html", "/project/coverage/lcov.info"} {
+		w.handle(fsnotify.Event{Name: name, Op: fsnotify.Remove})
+	}
+	if len(op.order) != 0 {
+		t.Fatalf("removals sent before the flush: %v", op.order)
+	}
+	w.flushRemovals()
+	want := []string{"/project/coverage/report/index.html", "/project/coverage/lcov.info", "/project/coverage/report", "/project/coverage"}
+	if !equal(op.order, want) {
+		t.Fatalf("order = %v, want %v", op.order, want)
+	}
+	if !equal(op.rmdirs, []string{"/project/coverage/report", "/project/coverage"}) {
+		t.Fatalf("rmdirs = %v", op.rmdirs)
+	}
+}
+
+func TestFlushRemovalsLeavesAReplacedFileAlone(t *testing.T) {
+	dir := t.TempDir()
+	file := filepath.Join(dir, "saved.go")
+	writeFiles(t, dir, "saved.go")
+	op := &fakeOperations{}
+	w := testWatch(t, dir, op)
+	// An atomic save: the old file is reported removed, the new one is already there.
+	w.handle(fsnotify.Event{Name: file, Op: fsnotify.Rename})
+	w.flushRemovals()
+	if len(op.deletes) != 0 {
+		t.Fatalf("deletes=%v", op.deletes)
+	}
+}
+
+func TestWatchRemovesADirectoryTreeBottomUp(t *testing.T) {
+	root, op, _ := startWatch(t, Options{NewDirectoryLimit: 10})
+	writeFiles(t, root, "coverage/lcov.info", "coverage/report/index.html", "coverage/report/src/a.html", "coverage/report/src/b.html")
+	eventually(t, "new directory was not uploaded", func() bool { return len(op.sortedUploads()) >= 4 })
+	if err := os.RemoveAll(filepath.Join(root, "coverage")); err != nil {
+		t.Fatal(err)
+	}
+	eventually(t, "directory tree was not removed", func() bool {
+		op.mu.Lock()
+		defer op.mu.Unlock()
+		return len(op.rmdirs) >= 3
+	})
+	op.mu.Lock()
+	defer op.mu.Unlock()
+	removed := op.order[len(op.order)-7:]
+	for i, path := range removed {
+		for _, later := range removed[i+1:] {
+			if isWithin(path, later) {
+				t.Fatalf("%s removed before %s: %v", path, later, removed)
+			}
+		}
+	}
+	if len(op.deletes) != 4 || len(op.rmdirs) != 3 {
+		t.Fatalf("deletes=%v rmdirs=%v", op.deletes, op.rmdirs)
 	}
 }
 func TestHandleMapsCreatedFileToUpload(t *testing.T) {

@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -18,6 +19,10 @@ import (
 // settleDelay is how long a directory created while watching must go without
 // events before its contents are scanned and synced.
 var settleDelay = time.Second
+
+// removalDelay is how long removals are held back after the last one, so that
+// a whole deleted tree is sent in one ordered batch.
+func removalDelay() time.Duration { return settleDelay / 4 }
 
 // Operations are the remote actions needed for a local file system event.
 type Operations interface {
@@ -56,6 +61,11 @@ type watch struct {
 	fresh map[string]*freshDirectory
 	// skipped holds new directories left out for exceeding the limit.
 	skipped map[string]struct{}
+	// removals holds removed paths (true for directories) that have not been
+	// sent yet. Removing a tree reports its entries in no particular order,
+	// and a directory can only be removed remotely once it is empty.
+	removals    map[string]bool
+	removalsDue time.Time
 }
 
 type freshDirectory struct {
@@ -102,6 +112,9 @@ func Watch(ctx context.Context, root string, options Options, operations Operati
 			}
 			w.event(event)
 		case now := <-ticker.C:
+			if !now.Before(w.removalsDue) {
+				w.flushRemovals()
+			}
 			w.settle(now)
 		}
 	}
@@ -114,6 +127,7 @@ func newWatch(watcher *fsnotify.Watcher, root string, options Options, operation
 	return &watch{
 		watcher: watcher, root: root, options: options, operations: operations, log: log,
 		watched: map[string]struct{}{}, fresh: map[string]*freshDirectory{}, skipped: map[string]struct{}{},
+		removals: map[string]bool{},
 	}
 }
 
@@ -381,14 +395,43 @@ func (w *watch) handle(event fsnotify.Event) {
 		return
 	}
 	if removed(event) {
-		if _, ok := w.watched[name]; ok {
+		_, dir := w.watched[name]
+		if dir {
 			delete(w.watched, name)
 			w.forget(name)
+		}
+		// A directory may be reported twice; the second time it is no longer watched.
+		w.removals[name] = w.removals[name] || dir
+		w.removalsDue = time.Now().Add(removalDelay())
+	}
+}
+
+// flushRemovals sends the held-back removals, deepest paths first so that a
+// directory goes after everything inside it. A path that exists again is left
+// alone: it was replaced, and its create event syncs the new contents.
+func (w *watch) flushRemovals() {
+	names := make([]string, 0, len(w.removals))
+	for name := range w.removals {
+		names = append(names, name)
+	}
+	slices.SortFunc(names, func(a, b string) int {
+		if byDepth := strings.Count(b, string(filepath.Separator)) - strings.Count(a, string(filepath.Separator)); byDepth != 0 {
+			return byDepth
+		}
+		return strings.Compare(a, b)
+	})
+	for _, name := range names {
+		dir := w.removals[name]
+		delete(w.removals, name)
+		if info, err := os.Lstat(name); err == nil && info.IsDir() == dir {
+			continue
+		}
+		if dir {
 			w.log.Change("unlinkDir", relative(w.root, name))
 			w.operations.DeleteDir(name)
-			return
+		} else {
+			w.log.Change("unlink", relative(w.root, name))
+			w.operations.DeleteFile(name)
 		}
-		w.log.Change("unlink", relative(w.root, name))
-		w.operations.DeleteFile(name)
 	}
 }

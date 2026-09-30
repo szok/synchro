@@ -5,6 +5,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2026-09-30
+
+### Changed
+
+- Removals are sent 250–500 ms after the last one, as one batch, instead of immediately
+- A remote directory that cannot be removed because it still holds entries that were not synced from here is reported as `Rmdir skipped …: remote directory still holds N entries …` instead of a bare `Failure`; one that is already gone is no longer reported as an error
+
+### Fixed
+
+- Deleting a directory tree (e.g. `rm -rf coverage`) failed with `Delete failed …: sftp: "Failure" (SSH_FX_FAILURE)` and left the directories on the server: on macOS a directory can be reported removed before the files inside it, so its removal was requested while it was not yet empty. Removals now go deepest-first, contents before their directory
+- A directory that was deleted, recreated and deleted again was reported twice, the second time as a file (`unlink` instead of `unlinkDir`); it is now removed once
+- A file replaced in place (atomic save) could be uploaded and then deleted on the server when its events arrived out of order; a path that exists again is no longer removed
+
 ## [1.4.1] - 2026-09-27
 
 ### Changed

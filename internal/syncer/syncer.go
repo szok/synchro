@@ -111,6 +111,14 @@ func (s *Syncer) DeleteDir(local string) {
 	remote := s.remote(local)
 	s.run(func(client *sftp.Client) error {
 		if err := client.RemoveDirectory(remote); err != nil {
+			if isNotExist(err) {
+				return nil
+			}
+			// Servers answer a bare SSH_FX_FAILURE for a directory that is not empty.
+			if entries, readErr := client.ReadDir(remote); readErr == nil && len(entries) > 0 {
+				s.log.Error(fmt.Sprintf("Rmdir skipped %s: remote directory still holds %d entries that were not synced from here", remote, len(entries)))
+				return nil
+			}
 			s.log.Error(fmt.Sprintf("Rmdir failed %s: %v", remote, err))
 			return nil
 		}

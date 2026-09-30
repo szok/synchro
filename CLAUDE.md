@@ -40,6 +40,8 @@ go vet ./...                        # Static checks
   Editor backup files (`*~`, `.#*`, `*.swp`, …) are ignored. A directory created
   while watching is held back until it settles (1s without events), then scanned
   and uploaded — or skipped with a `skipped` event if over `maxNewDirectoryFiles`.
+  Removals are held back briefly and sent deepest-first, so a deleted tree's
+  directories go after their contents (kqueue reports them in no fixed order).
 - **`internal/syncer`** — `Upload`, `DeleteFile`, `CreateDir`, `DeleteDir`, and
   `SyncAll` (bulk upload with bounded parallelism). `ResolveTargets` +
   `UploadFiles` back the one-shot `--upload` (over `sftpclient.Dial`).
