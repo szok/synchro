@@ -20,6 +20,7 @@ go vet ./...                        # Static checks
 ./synchro --sync                    # Watch and sync changes only
 ./synchro --test                    # Verify SSH/SFTP connectivity and exit
 ./synchro --upload <path>           # Upload a file/dir once and exit (repeatable)
+./synchro --download <path>         # Replace a local file with the remote copy and exit (repeatable)
 ./synchro --config=<path>           # Use a custom config file
 ./synchro --json --sync             # JSON events on stdout (for the VS Code extension)
 ```
@@ -44,8 +45,12 @@ go vet ./...                        # Static checks
   directories go after their contents (kqueue reports them in no fixed order).
 - **`internal/syncer`** — `Upload`, `DeleteFile`, `CreateDir`, `DeleteDir`, and
   `SyncAll` (bulk upload with bounded parallelism). `ResolveTargets` +
-  `UploadFiles` back the one-shot `--upload` (over `sftpclient.Dial`).
-  `MkdirAll` ensures remote parent dirs exist.
+  `UploadFiles` back the one-shot `--upload` (over `sftpclient.Dial`);
+  `ResolveDownloads` + `Download` back `--download`. `MkdirAll` ensures remote
+  parent dirs exist. `Download` writes via a `*.synchro.tmp.*` sibling (ignored
+  by the watcher's `.tmp.` rule) and sets mtime = remote mtime + 0.5s
+  (`downloadedNanos`); `Upload` skips a file still carrying that mark when the
+  remote size and mtime match, so a running watcher does not echo it back.
 - **`internal/paths`** — `RemotePath` maps local→remote POSIX paths (and refuses
   to escape the remote root). `IsExcluded`/`MatchGlob` handle `*` glob patterns
   with a compiled-regexp cache. `Filter` combines them with the root

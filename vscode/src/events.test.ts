@@ -49,3 +49,14 @@ test('eventEntry colours events like the CLI', () => {
   assert.equal(eventEntry({ event: 'mkdir', level: 'info', path: 'd', time: 'x' }).color, 'blue');
   assert.equal(eventEntry({ event: 'connected', level: 'success', username: 'u', host: 'h', time: 'x' }).bold, true);
 });
+
+test('formatEvent renders download and unchanged', () => {
+  assert.equal(
+    formatEvent({ event: 'download', level: 'info', path: 'src/app.go', time: 'x' }),
+    '--:--:-- ↓  [download] src/app.go',
+  );
+  assert.match(
+    formatEvent({ event: 'unchanged', level: 'info', path: 'src/app.go', time: 'x' }),
+    /^--:--:-- =  \[unchanged\] src\/app\.go \(same as/,
+  );
+});

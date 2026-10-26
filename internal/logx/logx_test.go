@@ -86,3 +86,14 @@ func TestWatchingListsGitignoreAmongExclusions(t *testing.T) {
 		t.Fatalf("events=%v; want gitignore=true", events)
 	}
 }
+
+func TestJSONModeReportsDownloadAndUnchanged(t *testing.T) {
+	var out bytes.Buffer
+	log := New(&out, &out, false, true)
+	log.Download("src/app.go")
+	log.Unchanged("src/app.go")
+	events := decodeLines(t, out.String())
+	if len(events) != 2 || events[0]["event"] != "download" || events[1]["event"] != "unchanged" || events[1]["path"] != "src/app.go" {
+		t.Fatalf("events = %v", events)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/pkg/sftp"
 	"github.com/szok/synchro/internal/config"
@@ -22,6 +23,8 @@ import (
 // Logger receives operation results for terminal presentation.
 type Logger interface {
 	Upload(string)
+	Download(string)
+	Unchanged(string)
 	Delete(string)
 	Mkdir(string)
 	Rmdir(string)
@@ -59,12 +62,27 @@ func (s *Syncer) relative(local string) string {
 	return filepath.ToSlash(rel)
 }
 
+// downloadedNanos marks a file written by Download: its mtime is the remote
+// file's (SFTP carries whole seconds) plus this fraction of a second. Any later
+// local write replaces the mtime, so a file still carrying the mark is exactly
+// what was downloaded and Upload does not send it back. Filesystems with
+// coarser timestamps drop the mark; such files are simply uploaded again.
+const downloadedNanos = 500_000_000
+
 // Upload uploads a local file after creating its remote parent directory.
-// It reports whether the file was uploaded successfully.
+// It reports whether the file was uploaded successfully. A file left as
+// Download wrote it, and still the same on the server, is not sent again.
 func (s *Syncer) Upload(local string) bool {
 	remote := s.remote(local)
 	success := false
 	s.run(func(client *sftp.Client) error {
+		if info, err := os.Stat(local); err == nil && info.ModTime().Nanosecond() == downloadedNanos {
+			if remoteInfo, err := client.Stat(remote); err == nil && matchesDownload(info, remoteInfo) {
+				s.log.Unchanged(s.relative(local))
+				success = true
+				return nil
+			}
+		}
 		if err := MkdirAll(client, pathpkg.Dir(remote)); err != nil {
 			s.log.Error(fmt.Sprintf("mkdir error: %v", err))
 			return nil
@@ -82,6 +100,35 @@ func (s *Syncer) Upload(local string) bool {
 	})
 	return success
 }
+
+// matchesDownload reports whether local, carrying the download mark, still
+// matches remote: same size and the same mtime to the second.
+func matchesDownload(local, remote os.FileInfo) bool {
+	return local.ModTime().Nanosecond() == downloadedNanos && remote.Mode().IsRegular() &&
+		local.Size() == remote.Size() && local.ModTime().Unix() == remote.ModTime().Unix()
+}
+
+// Download replaces a local file with its remote copy and reports whether it
+// succeeded. See download for how the file is written.
+func (s *Syncer) Download(local string) bool {
+	remote := s.remote(local)
+	success := false
+	s.run(func(client *sftp.Client) error {
+		if err := download(client, remote, local); err != nil {
+			if isNotExist(err) {
+				s.log.Error(fmt.Sprintf("Download failed %s: %s does not exist on the server", s.relative(local), remote))
+				return nil
+			}
+			s.log.Error(fmt.Sprintf("Download failed %s: %v", s.relative(local), err))
+			return nil
+		}
+		s.log.Download(s.relative(local))
+		success = true
+		return nil
+	})
+	return success
+}
+
 func (s *Syncer) DeleteFile(local string) {
 	remote := s.remote(local)
 	s.run(func(client *sftp.Client) error {
@@ -169,8 +216,8 @@ func ResolveTargets(root string, filter *paths.Filter, targets []string) ([]stri
 		if err != nil {
 			return nil, err
 		}
-		rel, err := filepath.Rel(root, absolute)
-		if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		rel, ok := within(root, absolute)
+		if !ok {
 			return nil, fmt.Errorf("%s is outside the synced directory %s", target, root)
 		}
 		info, err := os.Stat(absolute)
@@ -198,6 +245,49 @@ func ResolveTargets(root string, filter *paths.Filter, targets []string) ([]stri
 		}
 	}
 	return files, nil
+}
+
+// ResolveDownloads checks the files named on the command line for download
+// and returns their absolute paths, without duplicates. Every target must lie
+// inside root and must not be excluded; it need not exist locally yet, but
+// must not be a directory.
+func ResolveDownloads(root string, filter *paths.Filter, targets []string) ([]string, error) {
+	var files []string
+	seen := map[string]bool{}
+	for _, target := range targets {
+		absolute, err := filepath.Abs(target)
+		if err != nil {
+			return nil, err
+		}
+		if rel, ok := within(root, absolute); !ok || rel == "." {
+			return nil, fmt.Errorf("%s is not a file inside the synced directory %s", target, root)
+		}
+		info, err := os.Stat(absolute)
+		switch {
+		case err == nil && info.IsDir():
+			return nil, fmt.Errorf("%s is a directory; only files can be downloaded", target)
+		case err == nil && !info.Mode().IsRegular():
+			return nil, fmt.Errorf("%s is not a regular file", target)
+		case err != nil && !isNotExist(err):
+			return nil, err
+		case filter.Excluded(absolute, false):
+			return nil, fmt.Errorf("%s is excluded from syncing (\"exclude\" or .gitignore)", target)
+		}
+		if !seen[absolute] {
+			seen[absolute] = true
+			files = append(files, absolute)
+		}
+	}
+	return files, nil
+}
+
+// within returns path relative to root and whether path is root or lies below it.
+func within(root, path string) (string, bool) {
+	rel, err := filepath.Rel(root, path)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return rel, false
+	}
+	return rel, true
 }
 
 // parallelUpload runs upload for each file with bounded parallelism and
@@ -313,4 +403,53 @@ func upload(client *sftp.Client, local, remote string) error {
 		return copyErr
 	}
 	return closeErr
+}
+
+// download writes remote to local through a temporary file next to it, so an
+// interrupted transfer never leaves a truncated file. The temporary name
+// contains ".tmp." and is therefore ignored by the watcher. The result keeps
+// local's permissions (or takes remote's for a new file) and gets the remote
+// mtime with the download mark (see downloadedNanos).
+func download(client *sftp.Client, remote, local string) error {
+	source, err := client.Open(remote)
+	if err != nil {
+		return err
+	}
+	defer source.Close()
+	info, err := source.Stat()
+	if err != nil {
+		return err
+	}
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("remote path is not a regular file: %s", remote)
+	}
+	mode := info.Mode().Perm()
+	if existing, err := os.Stat(local); err == nil {
+		mode = existing.Mode().Perm()
+	}
+	if err := os.MkdirAll(filepath.Dir(local), 0o755); err != nil {
+		return err
+	}
+	temp, err := os.CreateTemp(filepath.Dir(local), "."+filepath.Base(local)+".synchro.tmp.*")
+	if err != nil {
+		return err
+	}
+	// Removing fails harmlessly once the file has been renamed into place.
+	defer os.Remove(temp.Name())
+	_, copyErr := source.WriteTo(temp)
+	closeErr := temp.Close()
+	if copyErr != nil {
+		return copyErr
+	}
+	if closeErr != nil {
+		return closeErr
+	}
+	if err := os.Chmod(temp.Name(), mode); err != nil {
+		return err
+	}
+	modified := info.ModTime().Truncate(time.Second).Add(downloadedNanos)
+	if err := os.Chtimes(temp.Name(), time.Now(), modified); err != nil {
+		return err
+	}
+	return os.Rename(temp.Name(), local)
 }

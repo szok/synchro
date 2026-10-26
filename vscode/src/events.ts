@@ -20,7 +20,7 @@ export type SynchroEvent = Base &
     | { event: 'syncAllDone'; uploaded: number; total: number }
     | { event: 'watching'; local: string; remote: string; exclude?: string[] | null; gitignore?: boolean }
     | { event: 'change'; change: string; path: string }
-    | { event: 'upload' | 'delete' | 'mkdir' | 'rmdir'; path: string }
+    | { event: 'upload' | 'download' | 'unchanged' | 'delete' | 'mkdir' | 'rmdir'; path: string }
     | { event: 'skipped'; path: string; limit: number }
     | { event: 'stopping'; reason: string }
     | { event: 'stopped' }
@@ -115,6 +115,10 @@ export function eventEntry(e: SynchroEvent): Entry {
       return entry('~', 'yellow', e.path, e.change);
     case 'upload':
       return entry('↑', 'green', e.path, 'upload');
+    case 'download':
+      return entry('↓', 'cyan', e.path, 'download');
+    case 'unchanged':
+      return entry('=', 'cyan', `${e.path} (same as the downloaded copy on the server, not uploaded)`, 'unchanged');
     case 'delete':
       return entry('✕', 'red', e.path, 'delete');
     case 'mkdir':

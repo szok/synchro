@@ -32,3 +32,13 @@ func TestParseFlagsCollectsRepeatedUpload(t *testing.T) {
 		t.Fatalf("upload = %v", options.upload)
 	}
 }
+
+func TestParseFlagsCollectsRepeatedDownload(t *testing.T) {
+	options, err := parseFlags([]string{"--download", "a.txt", "--download=b.txt"}, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(options.download, []string{"a.txt", "b.txt"}) {
+		t.Fatalf("download = %v", options.download)
+	}
+}

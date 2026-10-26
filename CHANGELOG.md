@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-10-26
+
+### Added
+
+- `--download <path>` replaces local files with their copies from the server and exits (repeatable, files only). The file is written to a temporary sibling and renamed into place, so an interrupted transfer never leaves it truncated
+- A downloaded file gets the remote modification time plus a half-second mark; a running `--sync` does not upload such a file back while it still matches the server, and logs `unchanged` instead
+- JSON events `download` and `unchanged`
+
 ## [1.4.2] - 2026-09-30
 
 ### Changed

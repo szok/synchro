@@ -24,7 +24,7 @@ const (
 )
 
 // Logger writes compact, timestamped terminal messages.
-// Quiet suppresses the per-file Upload/Delete/Mkdir/Rmdir/Change lines.
+// Quiet suppresses the per-file Upload/Download/Unchanged/Delete/Mkdir/Rmdir/Change lines.
 // JSON switches to one JSON object per line on Out (see emit), for editor integrations.
 type Logger struct {
 	Out, Err io.Writer
@@ -76,14 +76,18 @@ func (l *Logger) file(event, icon, color, path, display string) {
 	l.line(l.Out, icon, color, "["+event+"]", display)
 }
 
-func (l *Logger) Info(s string)    { l.message("info", "ℹ", cyan, l.Out, s) }
-func (l *Logger) Success(s string) { l.message("success", "✔", green, l.Out, s) }
-func (l *Logger) Warn(s string)    { l.message("warn", "⚠", yellow, l.Err, s) }
-func (l *Logger) Error(s string)   { l.message("error", "✖", red, l.Err, s) }
-func (l *Logger) Upload(s string)  { l.file("upload", "↑", green, s, s) }
-func (l *Logger) Delete(s string)  { l.file("delete", "✕", red, s, s) }
-func (l *Logger) Mkdir(s string)   { l.file("mkdir", "+", blue, s, s+"/") }
-func (l *Logger) Rmdir(s string)   { l.file("rmdir", "−", magenta, s, s+"/") }
+func (l *Logger) Info(s string)     { l.message("info", "ℹ", cyan, l.Out, s) }
+func (l *Logger) Success(s string)  { l.message("success", "✔", green, l.Out, s) }
+func (l *Logger) Warn(s string)     { l.message("warn", "⚠", yellow, l.Err, s) }
+func (l *Logger) Error(s string)    { l.message("error", "✖", red, l.Err, s) }
+func (l *Logger) Upload(s string)   { l.file("upload", "↑", green, s, s) }
+func (l *Logger) Download(s string) { l.file("download", "↓", cyan, s, s) }
+func (l *Logger) Unchanged(s string) {
+	l.file("unchanged", "=", cyan, s, s+gray+" (same as the downloaded copy on the server, not uploaded)"+reset)
+}
+func (l *Logger) Delete(s string) { l.file("delete", "✕", red, s, s) }
+func (l *Logger) Mkdir(s string)  { l.file("mkdir", "+", blue, s, s+"/") }
+func (l *Logger) Rmdir(s string)  { l.file("rmdir", "−", magenta, s, s+"/") }
 func (l *Logger) Change(event, s string) {
 	if l.Quiet {
 		return

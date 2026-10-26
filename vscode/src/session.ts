@@ -145,7 +145,8 @@ export class Session implements vscode.Disposable {
         this.syncAllDone = 0;
         this.status.set({ kind: 'syncAll', done: 0, total: e.total });
         break;
-      case 'upload': {
+      case 'upload':
+      case 'unchanged': {
         const current = this.status.current;
         if (current.kind === 'syncAll') {
           this.syncAllDone++;

@@ -2,7 +2,7 @@
   "name": "synchro",
   "displayName": "Synchro",
   "description": "Continuously sync your workspace to a remote server over SSH/SFTP.",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "publisher": "piotr-jarolewski",
   "license": "GPL-3.0-only",
   "author": "Piotr Jarolewski <jarolewski.piotr@gmail.com>",
@@ -74,6 +74,16 @@
         "category": "Synchro"
       },
       {
+        "command": "synchro.downloadCurrentFile",
+        "title": "Download current file",
+        "category": "Synchro"
+      },
+      {
+        "command": "synchro.download",
+        "title": "Download from server",
+        "category": "Synchro"
+      },
+      {
         "command": "synchro.toggle",
         "title": "Toggle sync",
         "category": "Synchro"
@@ -132,6 +142,10 @@
         {
           "command": "synchro.upload",
           "when": "false"
+        },
+        {
+          "command": "synchro.download",
+          "when": "false"
         }
       ],
       "view/title": [
@@ -146,6 +160,11 @@
           "command": "synchro.upload",
           "when": "synchro.hasConfig && resourceScheme == file",
           "group": "synchro@1"
+        },
+        {
+          "command": "synchro.download",
+          "when": "synchro.hasConfig && resourceScheme == file && !explorerResourceIsFolder",
+          "group": "synchro@2"
         }
       ],
       "editor/title/context": [
@@ -153,6 +172,11 @@
           "command": "synchro.upload",
           "when": "synchro.hasConfig && resourceScheme == file",
           "group": "synchro@1"
+        },
+        {
+          "command": "synchro.download",
+          "when": "synchro.hasConfig && resourceScheme == file",
+          "group": "synchro@2"
         }
       ],
       "editor/context": [
@@ -160,6 +184,11 @@
           "command": "synchro.uploadCurrentFile",
           "when": "synchro.hasConfig && resourceScheme == file",
           "group": "synchro@1"
+        },
+        {
+          "command": "synchro.downloadCurrentFile",
+          "when": "synchro.hasConfig && resourceScheme == file",
+          "group": "synchro@2"
         }
       ]
     },
@@ -188,6 +217,11 @@
           "type": "boolean",
           "default": false,
           "description": "Do not log every uploaded, deleted or created file (passes --quiet)."
+        },
+        "synchro.confirmDownload": {
+          "type": "boolean",
+          "default": true,
+          "description": "Ask before replacing a local file with its copy from the server. Files with unsaved changes are always confirmed."
         }
       }
     }

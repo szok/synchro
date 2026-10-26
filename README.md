@@ -24,9 +24,9 @@ SHA-256 sums in `checksums.txt`:
 
 ```bash
 # macOS on Apple Silicon; pick the archive for your platform
-curl -LO https://github.com/szok/synchro/releases/latest/download/synchro_1.4.2_darwin_arm64.tar.gz
-tar -xzf synchro_1.4.2_darwin_arm64.tar.gz
-mv synchro_1.4.2_darwin_arm64/synchro ~/.local/bin/
+curl -LO https://github.com/szok/synchro/releases/latest/download/synchro_1.5.0_darwin_arm64.tar.gz
+tar -xzf synchro_1.5.0_darwin_arm64.tar.gz
+mv synchro_1.5.0_darwin_arm64/synchro ~/.local/bin/
 ```
 
 On macOS a binary downloaded with a browser is quarantined; if it is blocked, run
@@ -54,6 +54,7 @@ synchro --test                       # verify the configured SSH/SFTP connection
 synchro --sync                       # watch and synchronize future changes
 synchro --syncAll                    # upload all files, then watch
 synchro --upload src/app.js          # upload one file or directory and exit (repeatable)
+synchro --download src/app.js        # replace a local file with the server's copy and exit (repeatable)
 synchro --config=path/to/config.json --sync
 synchro --json --sync                # machine-readable JSON events (one per line)
 synchro --help
@@ -63,6 +64,13 @@ synchro --help
 file failed. Paths must lie inside `directory` and must not be excluded;
 excluded files inside an uploaded directory are skipped, `maxNewDirectoryFiles`
 does not apply.
+
+`--download` works the same way in the other direction, for files only. The
+file is written to a temporary sibling (ignored by the watcher) and renamed
+into place, keeping its local permissions. It gets the remote modification
+time plus a half-second mark; while a file still carries that mark and matches
+the server's size and time, a running `--sync` does not upload it back and logs
+`unchanged` instead. Any edit changes the time, so edited files upload as usual.
 
 `--init` never overwrites an existing `.synchro.json` and creates it with mode `0600`.
 
@@ -93,6 +101,8 @@ stdout (errors included). Every event has `time`, `level` (`info`, `success`,
 | `watching`                           | `local`, `remote`, `exclude`                                        |
 | `change`                             | `change` (`add`, `change`, `unlink`, `addDir`, `unlinkDir`), `path` |
 | `upload`, `delete`, `mkdir`, `rmdir` | `path` (relative to `directory`)                                    |
+| `download`                           | `path` (replaced with the server's copy)                            |
+| `unchanged`                          | `path` (still as downloaded, so not uploaded back)                  |
 | `skipped` (level `warn`)             | `path` (new directory not synced), `limit`                          |
 | `stopping`                           | `reason`                                                            |
 | `stopped`                            | —                                                                   |
@@ -168,9 +178,10 @@ JSON events from its stdout and shows them in VS Code. User-facing docs live in
 ### Features
 
 - **Commands** (`Ctrl/Cmd+Shift+P`, category "Synchro"): Create config, Start
-  sync, Sync all and watch, Stop, Upload current file, Test connection, Set
-  password, Clear password, Show log. "Upload to server" is also in the
-  context menu of Explorer items and editor tabs.
+  sync, Sync all and watch, Stop, Upload current file, Download current file,
+  Test connection, Set password, Clear password, Show log. "Upload to server"
+  and "Download from server" are also in the context menu of Explorer items
+  and editor tabs.
 - **Status bar item** showing stopped / connecting / full-sync progress
   (`12/40`) / syncing / reconnecting, plus an error count. Click it to start or
   stop.

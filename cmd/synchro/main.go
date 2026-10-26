@@ -28,7 +28,7 @@ const shutdownTimeout = 15 * time.Second
 type options struct {
 	init, test, sync, syncAll, noLogo, help, quiet, version, json, stopOnStdinClose bool
 	config                                                                          string
-	upload                                                                          []string
+	upload, download                                                                []string
 }
 
 func main() {
@@ -67,7 +67,7 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		log.Info("Edit the file above, then run: synchro --syncAll")
 		return 0
 	}
-	if !options.test && !options.sync && !options.syncAll && len(options.upload) == 0 {
+	if !options.test && !options.sync && !options.syncAll && len(options.upload) == 0 && len(options.download) == 0 {
 		printHelp(out)
 		return 0
 	}
@@ -94,8 +94,15 @@ func run(args []string, stdin io.Reader, out, errOut io.Writer) int {
 		log.Error(err.Error())
 		return 1
 	}
+	if len(options.upload) > 0 && len(options.download) > 0 {
+		log.Error("Use either --upload or --download, not both")
+		return 2
+	}
 	if len(options.upload) > 0 {
 		return uploadOnce(cfg, filter, options.upload, log)
+	}
+	if len(options.download) > 0 {
+		return downloadOnce(cfg, filter, options.download, log)
 	}
 	var stdinClosed io.Reader
 	if options.stopOnStdinClose {
@@ -171,21 +178,11 @@ func uploadOnce(cfg config.Config, filter *paths.Filter, targets []string, log *
 		log.Warn("Nothing to upload")
 		return 0
 	}
-	client, closeClient, err := sftpclient.Dial(cfg)
-	if err != nil {
-		log.Error(fmt.Sprintf("SSH connection failed: %v", err))
+	s, closeClient, ok := dialSyncer(cfg, filter, log)
+	if !ok {
 		return 1
 	}
 	defer closeClient()
-	s, err := syncer.New(cfg, filter, func(operation sftpclient.Operation) {
-		if err := operation(client); err != nil {
-			log.Error(fmt.Sprintf("SFTP operation error: %v", err))
-		}
-	}, log)
-	if err != nil {
-		log.Error(err.Error())
-		return 1
-	}
 	ctx, stop := watchShutdown(log, nil)
 	defer stop()
 	uploaded := s.UploadFiles(ctx, files)
@@ -201,6 +198,72 @@ func uploadOnce(cfg config.Config, filter *paths.Filter, targets []string, log *
 		log.Success(fmt.Sprintf("Uploaded %d files to %s", len(files), destination))
 	}
 	return 0
+}
+
+// downloadOnce replaces the given local files with their remote copies over a
+// single connection without retrying, then exits. It fails when any of them
+// was not downloaded.
+func downloadOnce(cfg config.Config, filter *paths.Filter, targets []string, log *logx.Logger) int {
+	root, err := cfg.LocalDirectory()
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	files, err := syncer.ResolveDownloads(root, filter, targets)
+	if err != nil {
+		log.Error(err.Error())
+		return 1
+	}
+	s, closeClient, ok := dialSyncer(cfg, filter, log)
+	if !ok {
+		return 1
+	}
+	defer closeClient()
+	ctx, stop := watchShutdown(log, nil)
+	defer stop()
+	downloaded := 0
+	for _, file := range files {
+		if ctx.Err() != nil {
+			break
+		}
+		if s.Download(file) {
+			downloaded++
+		}
+	}
+	source := fmt.Sprintf("%s@%s", cfg.Username, cfg.Host)
+	if downloaded < len(files) {
+		log.Error(fmt.Sprintf("Downloaded %d of %d files from %s", downloaded, len(files), source))
+		return 1
+	}
+	if len(files) == 1 {
+		rel, _ := filepath.Rel(root, files[0])
+		log.Success(fmt.Sprintf("Downloaded %s from %s", filepath.ToSlash(rel), source))
+	} else {
+		log.Success(fmt.Sprintf("Downloaded %d files from %s", len(files), source))
+	}
+	return 0
+}
+
+// dialSyncer opens a single connection without retrying and returns a Syncer
+// that runs its operations on it, plus the function closing the connection.
+// It logs and reports false on failure.
+func dialSyncer(cfg config.Config, filter *paths.Filter, log *logx.Logger) (*syncer.Syncer, func(), bool) {
+	client, closeClient, err := sftpclient.Dial(cfg)
+	if err != nil {
+		log.Error(fmt.Sprintf("SSH connection failed: %v", err))
+		return nil, nil, false
+	}
+	s, err := syncer.New(cfg, filter, func(operation sftpclient.Operation) {
+		if err := operation(client); err != nil {
+			log.Error(fmt.Sprintf("SFTP operation error: %v", err))
+		}
+	}, log)
+	if err != nil {
+		closeClient()
+		log.Error(err.Error())
+		return nil, nil, false
+	}
+	return s, closeClient, true
 }
 
 // watchShutdown returns a context cancelled by the first SIGINT/SIGTERM, or by
@@ -255,13 +318,17 @@ func parseFlags(args []string, errOut io.Writer) (options, error) {
 		o.upload = append(o.upload, path)
 		return nil
 	})
+	fs.Func("download", "Replace a local file with its copy from the server and exit (repeatable)", func(path string) error {
+		o.download = append(o.download, path)
+		return nil
+	})
 	fs.StringVar(&o.config, "config", config.DefaultFile, "Use a custom config file")
 	fs.BoolVar(&o.noLogo, "no-logo", false, "Do not display logo")
 	fs.BoolVar(&o.noLogo, "hide-logo", false, "Do not display logo (alias for --no-logo)")
 	fs.BoolVar(&o.help, "help", false, "Display help")
 	fs.BoolVar(&o.help, "h", false, "Display help")
-	fs.BoolVar(&o.quiet, "quiet", false, "Suppress per-file upload/delete/mkdir/rmdir logs")
-	fs.BoolVar(&o.quiet, "q", false, "Suppress per-file upload/delete/mkdir/rmdir logs (alias for --quiet)")
+	fs.BoolVar(&o.quiet, "quiet", false, "Suppress per-file upload/download/delete/mkdir/rmdir logs")
+	fs.BoolVar(&o.quiet, "q", false, "Suppress per-file upload/download/delete/mkdir/rmdir logs (alias for --quiet)")
 	fs.BoolVar(&o.version, "version", false, "Print the Synchro version and exit")
 	fs.BoolVar(&o.version, "v", false, "Print the Synchro version and exit (alias for --version)")
 	fs.BoolVar(&o.json, "json", false, "Print one JSON event per line on stdout instead of colored logs")
@@ -282,9 +349,11 @@ func printHelp(out io.Writer) {
   --sync           Connect and watch for changes, uploading them as they happen
   --syncAll        Do a full upload of all files first, then watch for changes
   --upload <path>  Upload a file or directory once and exit (repeatable)
+  --download <path>
+                   Replace a local file with its copy from the server and exit (repeatable)
   --config <path>  Use a custom config file instead of .synchro.json
   --no-logo        Do not display the SYNCHRO ASCII art logo
-  --quiet, -q      Suppress per-file upload/delete/mkdir/rmdir logs
+  --quiet, -q      Suppress per-file upload/download/delete/mkdir/rmdir logs
   --json           Print one JSON event per line on stdout instead of colored logs
   --stop-on-stdin-close
                    Stop gracefully when stdin is closed (for editor integrations)

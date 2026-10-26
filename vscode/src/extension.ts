@@ -32,9 +32,11 @@ export function activate(context: vscode.ExtensionContext): void {
     command('synchro.uploadCurrentFile', () => c.upload()),
     // Explorer passes the clicked item and the whole selection; editor tabs only the clicked file.
     vscode.commands.registerCommand('synchro.upload', (uri?: vscode.Uri, selected?: unknown) =>
-      c.upload(
-        Array.isArray(selected) && selected.length > 0 ? selected : uri instanceof vscode.Uri ? [uri] : undefined,
-      ),
+      c.upload(clickedUris(uri, selected)),
+    ),
+    command('synchro.downloadCurrentFile', () => c.download()),
+    vscode.commands.registerCommand('synchro.download', (uri?: vscode.Uri, selected?: unknown) =>
+      c.download(clickedUris(uri, selected)),
     ),
     vscode.commands.registerCommand('synchro.toggle', (configFile?: string) => c.toggle(configFile)),
     command('synchro.testConnection', () => c.testConnection()),
@@ -194,6 +196,75 @@ class Controller implements vscode.Disposable {
         return;
       }
     }
+    const byConfig = this.groupByConfig(uris);
+    if (byConfig) {
+      await Promise.all([...byConfig].map(([configFile, files]) => this.transfer('upload', configFile, files)));
+    }
+  }
+
+  /**
+   * Replaces files with their copies from the server with `synchro --download`,
+   * one run per config. Asks first: always when a file has unsaved changes,
+   * otherwise unless `synchro.confirmDownload` is off. Editors with unsaved
+   * changes are reverted afterwards, so they show the downloaded content.
+   * @param uris Files to download; defaults to the active editor's file.
+   */
+  async download(uris?: vscode.Uri[]): Promise<void> {
+    if (!uris) {
+      const document = vscode.window.activeTextEditor?.document;
+      if (!document || document.uri.scheme !== 'file') {
+        void vscode.window.showWarningMessage('Open a file saved in the workspace to download it.');
+        return;
+      }
+      uris = [document.uri];
+    }
+    if (uris.some((uri) => fs.statSync(uri.fsPath, { throwIfNoEntry: false })?.isDirectory())) {
+      void vscode.window.showWarningMessage('Only files can be downloaded, not folders.');
+      return;
+    }
+    const byConfig = this.groupByConfig(uris);
+    if (!byConfig) {
+      return;
+    }
+    const targets = new Set(uris.map((uri) => uri.fsPath));
+    const unsaved = vscode.workspace.textDocuments.filter(
+      (d) => d.isDirty && d.uri.scheme === 'file' && targets.has(d.uri.fsPath),
+    );
+    if (unsaved.length > 0 || vscode.workspace.getConfiguration('synchro').get<boolean>('confirmDownload', true)) {
+      const what = uris.length === 1 ? path.basename(uris[0].fsPath) : `${uris.length} files`;
+      const detail =
+        unsaved.length > 0
+          ? `Unsaved changes in ${unsaved.map((d) => path.basename(d.uri.fsPath)).join(', ')} will be lost.`
+          : 'The local copy will be overwritten.';
+      const action = await vscode.window.showWarningMessage(
+        `Replace ${what} with the copy from the server?`,
+        { modal: true, detail },
+        'Download',
+      );
+      if (action !== 'Download') {
+        return;
+      }
+    }
+    const downloaded = new Set<string>();
+    await Promise.all(
+      [...byConfig].map(async ([configFile, files]) => {
+        if (await this.transfer('download', configFile, files)) {
+          files.forEach((file) => downloaded.add(file));
+        }
+      }),
+    );
+    // The file on disk changed, but an editor with unsaved changes keeps its text until reverted.
+    for (const document of unsaved.filter((d) => downloaded.has(d.uri.fsPath))) {
+      await vscode.window.showTextDocument(document, { preview: false });
+      await vscode.commands.executeCommand('workbench.action.files.revert');
+    }
+  }
+
+  /**
+   * Groups files by the config of their workspace folder.
+   * @returns Undefined, after a warning, when a file is outside every folder with a config.
+   */
+  private groupByConfig(uris: vscode.Uri[]): Map<string, string[]> | undefined {
     this.syncSessions();
     const byConfig = new Map<string, string[]>();
     for (const uri of uris) {
@@ -203,29 +274,30 @@ class Controller implements vscode.Disposable {
         void vscode.window.showWarningMessage(
           `${path.basename(uri.fsPath)} is not in a workspace folder with a Synchro config.`,
         );
-        return;
+        return undefined;
       }
       byConfig.set(configFile, [...(byConfig.get(configFile) ?? []), uri.fsPath]);
     }
-    await Promise.all([...byConfig].map(([configFile, files]) => this.uploadWith(configFile, files)));
+    return byConfig;
   }
 
   /**
-   * Runs `synchro --upload` for paths of one config and reports the outcome:
-   * a status bar message on success, an error notification on failure.
+   * Runs `synchro --upload` or `synchro --download` for paths of one config and
+   * reports the outcome: a status bar message on success, an error notification on failure.
+   * @returns Whether every path was transferred.
    */
-  private async uploadWith(configFile: string, files: string[]): Promise<void> {
+  private async transfer(direction: 'upload' | 'download', configFile: string, files: string[]): Promise<boolean> {
     const session = this.sessions.get(configFile);
     const name = session?.name ?? 'Synchro';
     const log = (line: string | Entry) => (session ? session.log(line) : this.log(line));
-    const args = files.map((file) => `--upload=${file}`);
+    const args = files.map((file) => `--${direction}=${file}`);
     if (vscode.workspace.getConfiguration('synchro').get<boolean>('quiet', false)) {
       args.push('--quiet');
     }
     const launch = await this.launch(configFile, args);
     const what = files.length === 1 ? path.basename(files[0]) : `${files.length} items`;
     const result = await vscode.window.withProgress(
-      { location: vscode.ProgressLocation.Window, title: `${name}: uploading ${what}…` },
+      { location: vscode.ProgressLocation.Window, title: `${name}: ${direction}ing ${what}…` },
       () =>
         runOnce(launch, {
           event: (e) => log(eventEntry(e)),
@@ -234,10 +306,11 @@ class Controller implements vscode.Disposable {
     );
     const success = result.events.find((e) => e.event === 'success' || e.event === 'warn');
     if (result.code === 0 && success && (success.event === 'success' || success.event === 'warn')) {
-      vscode.window.setStatusBarMessage(`$(cloud-upload) ${name}: ${success.message}`, 5000);
-      return;
+      vscode.window.setStatusBarMessage(`$(cloud-${direction}) ${name}: ${success.message}`, 5000);
+      return true;
     }
-    await this.reportFailure('Upload failed', result.events, session);
+    await this.reportFailure(direction === 'upload' ? 'Upload failed' : 'Download failed', result.events, session);
+    return false;
   }
 
   /**
@@ -498,6 +571,14 @@ class Controller implements vscode.Disposable {
     this.sessions.forEach((s) => s.dispose());
     this.disposables.forEach((d) => d.dispose());
   }
+}
+
+/**
+ * Files a context-menu command applies to: the Explorer selection, else the
+ * clicked item (editor tabs pass only that), else undefined for the active editor.
+ */
+function clickedUris(uri?: vscode.Uri, selected?: unknown): vscode.Uri[] | undefined {
+  return Array.isArray(selected) && selected.length > 0 ? selected : uri instanceof vscode.Uri ? [uri] : undefined;
 }
 
 /** Absolute path of a folder's config file, from the `synchro.configPath` setting. */
