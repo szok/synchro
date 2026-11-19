@@ -29,7 +29,11 @@ export class LogView implements vscode.WebviewViewProvider, vscode.Disposable {
   /** Folder whose tab is selected, or undefined for "All". Kept here so it survives the view being hidden. */
   private selected?: string;
   private view?: vscode.WebviewView;
-  private readonly registration = vscode.window.registerWebviewViewProvider(LogView.viewId, this);
+  // Kept alive while hidden: a webview that reloads on every reveal is not ready
+  // when VS Code tries to focus it, so focus (and its blue ring) stays on the panel tab.
+  private readonly registration = vscode.window.registerWebviewViewProvider(LogView.viewId, this, {
+    webviewOptions: { retainContextWhenHidden: true },
+  });
 
   /**
    * Called by VS Code when the tab is first shown or recreated; renders the page

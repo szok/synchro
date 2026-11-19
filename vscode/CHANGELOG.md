@@ -5,6 +5,12 @@ All notable changes to the Synchro VS Code extension will be documented in this 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-11-19
+
+### Fixed
+
+- Opening the Synchro panel tab no longer leaves a blue focus outline on the tab: the log view is kept loaded while hidden, so it takes focus at once (switching back also keeps the scroll position)
+
 ## [1.2.0] - 2026-10-26
 
 ### Added
